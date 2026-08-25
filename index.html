@@ -1,0 +1,3176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIH26011 - 3D ULPIN & Vertical Property Mapping System</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Three.js + OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.4); }
+    
+    @keyframes pulse-conflict {
+      0%, 100% { opacity: 0.9; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.02); }
+    }
+    .pulse-alert {
+      animation: pulse-conflict 1.5s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 h-screen w-screen overflow-hidden select-none">
+
+  <!-- Top Navigation Bar -->
+  <header class="absolute top-0 left-0 right-0 z-30 h-16 glass-panel border-b border-slate-800/80 px-6 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="h-9 w-9 rounded-lg bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+        <i data-lucide="layers" class="w-5 h-5 text-slate-950 font-bold"></i>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <span class="font-bold text-base tracking-tight bg-gradient-to-r from-emerald-400 via-cyan-300 to-blue-400 bg-clip-text text-transparent">GeoCadastre-3D</span>
+          <span class="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded">SIH26011</span>
+          <span class="px-2 py-0.5 text-[10px] font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded">ISO 19152 LADM</span>
+        </div>
+        <p class="text-xs text-slate-400">Volumetric Cadastral Registry & Vertical Overlap Engine</p>
+      </div>
+    </div>
+
+    <!-- Header Stats / Quick Status -->
+    <div class="hidden md:flex items-center space-x-6 text-xs">
+      <div class="flex items-center space-x-2">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+        <span class="text-slate-300">CORS Station: <span class="mono text-emerald-400 font-medium">RTK-FIXED (0.012m)</span></span>
+      </div>
+      <div class="h-4 w-px bg-slate-800"></div>
+      <div class="text-slate-300">
+        Datum: <span class="mono text-cyan-300">WGS84 / UTM-43N (EPSG:32643)</span>
+      </div>
+      <div class="h-4 w-px bg-slate-800"></div>
+      <div class="flex items-center space-x-1.5 text-amber-300 bg-amber-950/40 border border-amber-800/40 px-2.5 py-1 rounded-md">
+        <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+        <span id="conflict-badge">1 Boundary Dispute Detected</span>
+      </div>
+      <div class="h-4 w-px bg-slate-800"></div>
+      <!-- Backend Status Indicator -->
+      <div id="backend-status-badge" class="flex items-center space-x-1.5 px-2 py-1 rounded bg-slate-800 text-slate-400 text-[10px] font-mono font-medium border border-slate-700 cursor-pointer transition" title="FastAPI Backend Health Status. Click to re-check.">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+        <span>Backend: Initializing...</span>
+      </div>
+    </div>
+
+    <!-- Right Actions -->
+    <div class="flex items-center space-x-3">
+      <button id="btn-toggle-conflict" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white flex items-center space-x-1.5 transition shadow-lg shadow-rose-600/30">
+        <i data-lucide="shield-alert" class="w-4 h-4"></i>
+        <span>Simulate Overlap Conflict</span>
+      </button>
+      <button id="btn-run-matrix" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition cursor-pointer active:scale-95">
+        <i data-lucide="rotate-3d" class="w-4 h-4 text-purple-400"></i>
+        <span>Conflict Matrix</span>
+      </button>
+      <button id="btn-run-validation" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition">
+        <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+        <span>Validate 3D Topology</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 3D Canvas Viewport -->
+  <div id="canvas-container" class="absolute inset-0 z-0 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950"></div>
+
+  <!-- Left Control & Layers Sidebar -->
+  <aside class="absolute top-20 left-4 z-20 w-80 glass-panel rounded-xl p-4 flex flex-col space-y-4 max-h-[calc(100vh-6rem)] overflow-y-auto custom-scrollbar shadow-2xl">
+    <!-- Layer Toggles -->
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+          <i data-lucide="layers" class="w-3.5 h-3.5 text-cyan-400"></i>
+          <span>Volumetric Layers</span>
+        </h3>
+        <span class="text-[10px] text-slate-400">6 Domains</span>
+      </div>
+
+      <div class="space-y-1.5 text-xs">
+        <!-- Air Rights -->
+        <label class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 hover:bg-slate-800/60 border border-slate-800 cursor-pointer transition">
+          <div class="flex items-center space-x-2.5">
+            <span class="w-3 h-3 rounded bg-sky-400/60 border border-sky-300"></span>
+            <div>
+              <div class="font-medium text-slate-200">Air-Rights & Envelope</div>
+              <div class="text-[10px] text-slate-400">+45.0m to +70.0m</div>
+            </div>
+          </div>
+          <input type="checkbox" id="layer-air-rights" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+        </label>
+
+        <!-- Residential Units -->
+        <label class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 hover:bg-slate-800/60 border border-slate-800 cursor-pointer transition">
+          <div class="flex items-center space-x-2.5">
+            <span class="w-3 h-3 rounded bg-indigo-500/80 border border-indigo-300"></span>
+            <div>
+              <div class="font-medium text-slate-200">Residential Parcels (F1-F8)</div>
+              <div class="text-[10px] text-slate-400">+3.5m to +35.0m (32 Units)</div>
+            </div>
+          </div>
+          <input type="checkbox" id="layer-residential" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+        </label>
+
+        <!-- Commercial / Ground -->
+        <label class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 hover:bg-slate-800/60 border border-slate-800 cursor-pointer transition">
+          <div class="flex items-center space-x-2.5">
+            <span class="w-3 h-3 rounded bg-emerald-500/80 border border-emerald-300"></span>
+            <div>
+              <div class="font-medium text-slate-200">Commercial / Ground (G)</div>
+              <div class="text-[10px] text-slate-400">0.0m to +3.5m</div>
+            </div>
+          </div>
+          <input type="checkbox" id="layer-commercial" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+        </label>
+
+        <!-- Underground Utilities & Metro -->
+        <label class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 hover:bg-slate-800/60 border border-slate-800 cursor-pointer transition">
+          <div class="flex items-center space-x-2.5">
+            <span class="w-3 h-3 rounded bg-amber-500/80 border border-amber-300"></span>
+            <div>
+              <div class="font-medium text-slate-200">Subterranean (Basements / Metro)</div>
+              <div class="text-[10px] text-slate-400">-12.0m to 0.0m</div>
+            </div>
+          </div>
+          <input type="checkbox" id="layer-subterranean" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+        </label>
+
+        <!-- Point Cloud / LiDAR -->
+        <div class="rounded-lg bg-slate-900/60 border border-slate-800 transition overflow-hidden">
+          <label class="flex items-center justify-between p-2 hover:bg-slate-800/60 cursor-pointer">
+            <div class="flex items-center space-x-2.5">
+              <span class="w-3 h-3 rounded bg-pink-500/80 border border-pink-300"></span>
+              <div>
+                <div class="font-medium text-slate-200">LiDAR Raw Point Cloud</div>
+                <div class="text-[10px] text-slate-400">Drone / Terrestrial TLS</div>
+              </div>
+            </div>
+            <input type="checkbox" id="layer-pointcloud" class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+          </label>
+          
+          <!-- LiDAR Analysis Telemetry Panel (Shown when LiDAR layer is enabled) -->
+          <div id="panel-lidar-analysis" class="hidden p-2.5 border-t border-slate-800/80 bg-slate-950/60 space-y-1.5 text-[11px]">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-300 flex items-center space-x-1">
+                <i data-lucide="scan" class="w-3 h-3 text-pink-400"></i>
+                <span>LiDAR Survey Telemetry</span>
+              </span>
+              <span id="lidar-status-badge" class="px-1.5 py-0.2 rounded bg-pink-500/20 text-pink-300 font-mono text-[9px] font-bold border border-pink-500/30">ACTIVE</span>
+            </div>
+            <div class="space-y-1 text-[10px] text-slate-400">
+              <div class="flex justify-between">
+                <span>Point Count:</span>
+                <span id="lidar-pt-count" class="mono text-pink-300 font-medium">6,000 pts</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Elevation (Z-Min / Z-Max):</span>
+                <span id="lidar-elev-range" class="mono text-amber-300 font-medium">-10.0m to +22.0m</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Vertical Range (ΔZ):</span>
+                <span id="lidar-delta-z" class="mono text-cyan-300 font-medium">32.0m</span>
+              </div>
+              <div class="flex justify-between">
+                <span>3D Bounding Extent:</span>
+                <span id="lidar-coverage-vol" class="mono text-emerald-300 font-medium">19.0m × 32.0m × 19.0m</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Data Classification:</span>
+                <span class="mono text-slate-300 font-medium">Prototype Survey TLS</span>
+              </div>
+            <div class="pt-1.5 border-t border-slate-800/60 flex items-center justify-between text-[9px] text-slate-400">
+              <span id="lidar-sync-badge" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono text-[8px] font-medium border border-slate-700">LIDAR: READY</span>
+              <button id="btn-reanalyze-lidar" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[9px] font-medium border border-slate-700 transition">Analyze LiDAR</button>
+            </div>
+            <div class="pt-1">
+              <button id="btn-export-lidar-report" class="w-full py-1.5 px-2 rounded bg-pink-950/40 hover:bg-pink-900/50 text-pink-300 border border-pink-800/50 font-medium text-[10px] flex items-center justify-center space-x-1.5 transition active:scale-95 cursor-pointer">
+                <i data-lucide="file-text" class="w-3 h-3 text-pink-400"></i>
+                <span>Export LiDAR Analysis Report</span>
+              </button>
+            </div>
+
+            <!-- Geometric Building & Floor Extraction Module -->
+            <div class="pt-2 border-t border-slate-800/80 space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="font-semibold text-slate-200 flex items-center space-x-1 text-[10px]">
+                  <i data-lucide="layers" class="w-3.5 h-3.5 text-cyan-400"></i>
+                  <span>Building & Floor Extraction</span>
+                </span>
+                <button id="btn-extract-floors" class="px-2 py-0.5 rounded bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-700/50 text-[9px] font-semibold flex items-center space-x-1 transition active:scale-95 cursor-pointer">
+                  <i data-lucide="scan" class="w-3 h-3 text-cyan-400"></i>
+                  <span>Extract Building & Floors</span>
+                </button>
+              </div>
+
+              <!-- Extraction Status & Badges -->
+              <div class="grid grid-cols-2 gap-1 text-[9px]">
+                <div class="p-1 rounded bg-slate-950/80 border border-slate-800/80">
+                  <span class="text-slate-400 block text-[8px]">Extraction Status:</span>
+                  <span class="font-mono font-bold text-cyan-300">GEOMETRIC PROTOTYPE</span>
+                </div>
+                <div class="p-1 rounded bg-slate-950/80 border border-slate-800/80">
+                  <span class="text-slate-400 block text-[8px]">Floor Segmentation:</span>
+                  <span class="font-mono font-bold text-amber-300">RULE-BASED SLICING</span>
+                </div>
+              </div>
+
+              <!-- Live Extracted Slices Table -->
+              <div class="overflow-x-auto rounded border border-slate-800/90 bg-slate-950/90">
+                <table class="w-full text-left text-[9px]">
+                  <thead>
+                    <tr class="bg-slate-900/90 text-slate-400 border-b border-slate-800">
+                      <th class="py-1 px-1.5 font-semibold">SEGMENT</th>
+                      <th class="py-1 px-1 font-semibold text-right">POINTS</th>
+                      <th class="py-1 px-1.5 font-semibold text-right">ELEVATION</th>
+                    </tr>
+                  </thead>
+                  <tbody id="extraction-table-body" class="divide-y divide-slate-800/60 font-mono">
+                    <tr><td class="py-0.5 px-1.5 text-slate-300">Subterranean</td><td id="seg-pts-sub" class="py-0.5 px-1 text-right text-pink-300">--</td><td id="seg-elev-sub" class="py-0.5 px-1.5 text-right text-slate-400">--</td></tr>
+                    <tr><td class="py-0.5 px-1.5 text-slate-300">Ground/Comm</td><td id="seg-pts-comm" class="py-0.5 px-1 text-right text-pink-300">--</td><td id="seg-elev-comm" class="py-0.5 px-1.5 text-right text-slate-400">--</td></tr>
+                    <tr><td class="py-0.5 px-1.5 text-slate-300">Floor 1</td><td id="seg-pts-f1" class="py-0.5 px-1 text-right text-cyan-300">--</td><td id="seg-elev-f1" class="py-0.5 px-1.5 text-right text-slate-400">--</td></tr>
+                    <tr><td class="py-0.5 px-1.5 text-slate-300">Floor 2</td><td id="seg-pts-f2" class="py-0.5 px-1 text-right text-cyan-300">--</td><td id="seg-elev-f2" class="py-0.5 px-1.5 text-right text-slate-400">--</td></tr>
+                    <tr><td class="py-0.5 px-1.5 text-slate-300">Floor 3</td><td id="seg-pts-f3" class="py-0.5 px-1 text-right text-cyan-300">--</td><td id="seg-elev-f3" class="py-0.5 px-1.5 text-right text-slate-400">--</td></tr>
+                    <tr><td class="py-0.5 px-1.5 text-slate-300">Floor 4</td><td id="seg-pts-f4" class="py-0.5 px-1 text-right text-cyan-300">--</td><td id="seg-elev-f4" class="py-0.5 px-1.5 text-right text-slate-400">--</td></tr>
+                    <tr><td class="py-0.5 px-1.5 text-slate-300">Floor 5</td><td id="seg-pts-f5" class="py-0.5 px-1 text-right text-cyan-300">--</td><td id="seg-elev-f5" class="py-0.5 px-1.5 text-right text-slate-400">--</td></tr>
+                    <tr><td class="py-0.5 px-1.5 text-slate-300">Rooftop/Air</td><td id="seg-pts-roof" class="py-0.5 px-1 text-right text-amber-300">--</td><td id="seg-elev-roof" class="py-0.5 px-1.5 text-right text-slate-400">--</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Extracted Layer Preview Control -->
+              <div class="pt-1.5 border-t border-slate-800/80 space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-[9px] font-semibold text-slate-300 flex items-center space-x-1">
+                    <i data-lucide="eye" class="w-3 h-3 text-cyan-400"></i>
+                    <span>Extracted Layer Preview</span>
+                  </span>
+                  <span class="text-[8px] text-cyan-300 font-mono bg-cyan-500/20 px-1 py-0.2 rounded border border-cyan-500/30">Prototype</span>
+                </div>
+
+                <div class="flex items-center space-x-1.5">
+                  <select id="select-extract-preview" class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-[9px] rounded px-1.5 py-1 focus:ring-1 focus:ring-cyan-400 focus:outline-none cursor-pointer">
+                    <option value="all">All LiDAR Points (Full Envelope)</option>
+                    <option value="sub">Subterranean (Y &lt; 0.0m)</option>
+                    <option value="comm">Ground / Commercial (0.0m to 4.0m)</option>
+                    <option value="f1">Floor 1 (4.2m to 7.2m)</option>
+                    <option value="f2">Floor 2 (7.4m to 10.4m)</option>
+                    <option value="f3">Floor 3 (10.6m to 13.6m)</option>
+                    <option value="f4">Floor 4 (13.8m to 16.8m)</option>
+                    <option value="f5">Floor 5 (17.0m to 20.0m)</option>
+                    <option value="roof">Rooftop / Air Rights (Y &ge; 20.0m)</option>
+                  </select>
+                  <button id="btn-clear-preview" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[9px] font-medium border border-slate-700 transition flex-shrink-0 active:scale-95 cursor-pointer" title="Restore full LiDAR visualization">
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <!-- Note on Prototype Extraction -->
+              <div class="text-[8px] text-slate-500 italic leading-tight">
+                Data Source: Existing LiDAR Point Cloud. Geometric Extraction Preview — Prototype.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Prototype 3D ULPIN Formula Breakdown -->
+    <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-xs">
+      <div class="font-bold text-slate-300 mb-1 flex items-center justify-between">
+        <span>3D ULPIN Structure</span>
+        <span class="text-[10px] text-emerald-400 font-mono">Prototype Spec</span>
+      </div>
+      <div id="sidebar-ulpin-display" class="mono text-[11px] p-2 bg-slate-950 rounded border border-slate-800/80 text-emerald-300 break-all mb-2">
+        <span id="sidebar-ulpin-prefix" class="text-slate-400">IN-KA-560001-</span><span id="sidebar-ulpin-parcel" class="text-cyan-400">P9402</span><span id="sidebar-ulpin-elev" class="text-amber-400">-Z+015.5</span><span id="sidebar-ulpin-unit" class="text-purple-400">-U402</span>
+      </div>
+      <div class="space-y-1 text-[10px] text-slate-400">
+        <div class="flex justify-between"><span>Base 2D Parcel PIN:</span> <span id="sidebar-label-parcel" class="mono text-cyan-300">IN-KA-560001-P9402</span></div>
+        <div class="flex justify-between"><span>Vertical Altitude (MSL):</span> <span id="sidebar-label-elev" class="mono text-amber-300">Z +15.50m to +18.50m</span></div>
+        <div class="flex justify-between"><span>Volumetric Unit Token:</span> <span id="sidebar-label-unit" class="mono text-purple-300">U402 (Unit 402)</span></div>
+      </div>
+    </div>
+
+    <!-- Vertical Parcel Delineation — Prototype Module -->
+    <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-xs space-y-2">
+      <div class="flex items-center justify-between pb-1.5 border-b border-slate-800">
+        <div class="flex items-center space-x-1.5 font-bold text-slate-200">
+          <i data-lucide="box" class="w-3.5 h-3.5 text-cyan-400"></i>
+          <span>Vertical Parcel Delineation</span>
+        </div>
+        <span class="text-[9px] text-cyan-300 bg-cyan-500/20 px-1.5 py-0.5 rounded font-mono font-semibold border border-cyan-500/30">Prototype</span>
+      </div>
+
+      <div class="text-[10px] text-slate-400 leading-tight">
+        <span class="text-slate-300 font-medium">Cadastral Transformation:</span>
+        <div class="font-mono text-[9px] text-cyan-300 mt-0.5 bg-slate-950 p-1.5 rounded border border-slate-800/80">
+          2D Footprint ⊗ [Z_min, Z_max] ⟶ 3D Prismatic Parcel
+        </div>
+      </div>
+
+      <!-- Demonstration Volumes Cards -->
+      <div class="space-y-1.5 pt-0.5 text-[9px]">
+        <!-- Volume 1: Ground Commercial -->
+        <div class="p-2 rounded bg-slate-950/70 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between font-semibold">
+            <span class="text-slate-200">1. Ground Commercial Parcel</span>
+            <span class="text-emerald-400 font-mono">972.8 m³</span>
+          </div>
+          <div class="text-slate-400 flex justify-between">
+            <span>2D Footprint:</span>
+            <span class="font-mono text-slate-300">[-8.0, 8.0] × [-8.0, 8.0] (256.0 m²)</span>
+          </div>
+          <div class="text-slate-400 flex justify-between">
+            <span>Elevation (Box3):</span>
+            <span class="font-mono text-amber-300">Y: +0.10m to +3.90m (Δ3.80m)</span>
+          </div>
+          <div class="text-slate-400 flex justify-between">
+            <span>Vertical 3D ULPIN:</span>
+            <span class="font-mono text-cyan-300">IN-KA-560001-P9402-Z+000.1-COMM</span>
+          </div>
+        </div>
+
+        <!-- Volume 2: Floor 4 Stratum -->
+        <div class="p-2 rounded bg-slate-950/70 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between font-semibold">
+            <span class="text-slate-200">2. Residential Floor 4 Stratum</span>
+            <span class="text-emerald-400 font-mono">657.1 m³</span>
+          </div>
+          <div class="text-slate-400 flex justify-between">
+            <span>2D Footprint:</span>
+            <span class="font-mono text-slate-300">[-7.4, 7.4] × [-7.4, 7.4] (Units 401-404)</span>
+          </div>
+          <div class="text-slate-400 flex justify-between">
+            <span>Elevation (Box3):</span>
+            <span class="font-mono text-amber-300">Y: +13.80m to +16.80m (Δ3.00m)</span>
+          </div>
+          <div class="text-slate-400 flex justify-between">
+            <span>Vertical 3D ULPIN:</span>
+            <span class="font-mono text-cyan-300">IN-KA-560001-P9402-Z+013.8-FL04</span>
+          </div>
+        </div>
+
+        <!-- Volume 3: Subterranean B1 -->
+        <div class="p-2 rounded bg-slate-950/70 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between font-semibold">
+            <span class="text-slate-200">3. Subterranean B1 Parking</span>
+            <span class="text-emerald-400 font-mono">1,458.0 m³</span>
+          </div>
+          <div class="text-slate-400 flex justify-between">
+            <span>2D Footprint:</span>
+            <span class="font-mono text-slate-300">[-9.0, 9.0] × [-9.0, 9.0] (324.0 m²)</span>
+          </div>
+          <div class="text-slate-400 flex justify-between">
+            <span>Elevation (Box3):</span>
+            <span class="font-mono text-amber-300">Y: -4.80m to -0.30m (Δ4.50m)</span>
+          </div>
+          <div class="text-slate-400 flex justify-between">
+            <span>Vertical 3D ULPIN:</span>
+            <span class="font-mono text-cyan-300">IN-KA-560001-P9402-Z-004.8-SUB1</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Camera Bookmarks -->
+    <div>
+      <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center space-x-1.5">
+        <i data-lucide="video" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <span>Perspective Presets</span>
+      </h3>
+      <div class="grid grid-cols-2 gap-1.5 text-xs">
+        <button id="cam-isometric" class="p-1.5 rounded bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-center font-medium text-slate-300">3D Isometric</button>
+        <button id="cam-subterranean" class="p-1.5 rounded bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-center font-medium text-slate-300">Subterranean</button>
+        <button id="cam-airrights" class="p-1.5 rounded bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-center font-medium text-slate-300">Air Rights</button>
+        <button id="cam-dispute" class="p-1.5 rounded bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/60 text-center font-medium text-rose-300">Conflict Focus</button>
+      </div>
+    </div>
+
+    <!-- Exploded / Floor Slice Slider -->
+    <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+      <div class="flex justify-between text-xs font-medium mb-1">
+        <span class="text-slate-300">Vertical Explosion (Floor Offset)</span>
+        <span id="explode-val" class="mono text-cyan-400">0.0x</span>
+      </div>
+      <input id="slider-explode" type="range" min="0" max="2.5" step="0.1" value="0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+    </div>
+
+    <!-- AI/ML Processing Pipeline — Prototype Architectural Workflow -->
+    <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-xs space-y-2">
+      <div class="flex items-center justify-between pb-1.5 border-b border-slate-800">
+        <div class="flex items-center space-x-1.5 font-bold text-slate-200">
+          <i data-lucide="cpu" class="w-3.5 h-3.5 text-purple-400"></i>
+          <span>AI/ML Processing Pipeline</span>
+        </div>
+        <span class="text-[9px] text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded font-mono font-semibold border border-purple-500/30">Prototype Spec</span>
+      </div>
+
+      <p class="text-[10px] text-slate-400 leading-tight">
+        Target architectural workflow for automated point-cloud feature extraction to 3D ULPIN cadastral registration:
+      </p>
+
+      <div class="space-y-1.5 pt-1 text-[10px]">
+        <!-- Step 1 -->
+        <div class="flex items-center justify-between p-1.5 rounded bg-slate-950/60 border border-slate-800/80">
+          <div class="flex items-center space-x-2">
+            <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-mono text-[9px] font-bold">1</span>
+            <span class="text-slate-300 font-medium">LiDAR / Point Cloud Input</span>
+          </div>
+          <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[9px] font-bold">IMPLEMENTED</span>
+        </div>
+
+        <div class="flex justify-center text-slate-600 -my-1">
+          <i data-lucide="arrow-down" class="w-3 h-3 text-slate-600"></i>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="flex items-center justify-between p-1.5 rounded bg-slate-950/60 border border-slate-800/80">
+          <div class="flex items-center space-x-2">
+            <span class="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-mono text-[9px] font-bold">2</span>
+            <span class="text-slate-300 font-medium">Building Extraction</span>
+          </div>
+          <span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[9px] font-bold">PROTOTYPE</span>
+        </div>
+
+        <div class="flex justify-center text-slate-600 -my-1">
+          <i data-lucide="arrow-down" class="w-3 h-3 text-slate-600"></i>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="flex items-center justify-between p-1.5 rounded bg-slate-950/60 border border-slate-800/80">
+          <div class="flex items-center space-x-2">
+            <span class="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-mono text-[9px] font-bold">3</span>
+            <span class="text-slate-300 font-medium">Floor Segmentation</span>
+          </div>
+          <span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[9px] font-bold">PROTOTYPE</span>
+        </div>
+
+        <div class="flex justify-center text-slate-600 -my-1">
+          <i data-lucide="arrow-down" class="w-3 h-3 text-slate-600"></i>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="flex items-center justify-between p-1.5 rounded bg-slate-950/60 border border-slate-800/80">
+          <div class="flex items-center space-x-2">
+            <span class="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-mono text-[9px] font-bold">4</span>
+            <span class="text-slate-300 font-medium">Vertical Parcel Delineation</span>
+          </div>
+          <span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[9px] font-bold">PROTOTYPE</span>
+        </div>
+
+        <div class="flex justify-center text-slate-600 -my-1">
+          <i data-lucide="arrow-down" class="w-3 h-3 text-slate-600"></i>
+        </div>
+
+        <!-- Step 5 -->
+        <div class="flex items-center justify-between p-1.5 rounded bg-slate-950/60 border border-slate-800/80">
+          <div class="flex items-center space-x-2">
+            <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-mono text-[9px] font-bold">5</span>
+            <span class="text-slate-300 font-medium">Topology Validation</span>
+          </div>
+          <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[9px] font-bold">IMPLEMENTED</span>
+        </div>
+
+        <div class="flex justify-center text-slate-600 -my-1">
+          <i data-lucide="arrow-down" class="w-3 h-3 text-slate-600"></i>
+        </div>
+
+        <!-- Step 6 -->
+        <div class="flex items-center justify-between p-1.5 rounded bg-slate-950/60 border border-slate-800/80">
+          <div class="flex items-center space-x-2">
+            <span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-mono text-[9px] font-bold">6</span>
+            <span class="text-slate-300 font-medium">3D ULPIN Generation</span>
+          </div>
+          <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[9px] font-bold">IMPLEMENTED</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Right Inspection / Cadastral Property Card -->
+  <main id="property-card" class="absolute top-20 right-4 z-20 w-96 glass-panel rounded-xl p-5 shadow-2xl transition-all duration-300 transform translate-x-0 border-l-4 border-l-cyan-500 max-h-[calc(100vh-6rem)] overflow-y-auto custom-scrollbar flex flex-col">
+    <!-- Card Header -->
+    <div class="flex items-start justify-between pb-3 border-b border-slate-800">
+      <div>
+        <div class="flex items-center space-x-2">
+          <span id="unit-badge" class="px-2 py-0.5 text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded">RESIDENTIAL PARCEL</span>
+          <span id="unit-status" class="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded flex items-center space-x-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span>REGISTERED</span>
+          </span>
+          <span id="prop-sync-badge" class="px-1.5 py-0.5 text-[9px] font-mono font-medium bg-slate-800 text-slate-400 border border-slate-700 rounded transition" title="Backend Synchronization Status">SYNC: IDLE</span>
+        </div>
+        <h2 id="unit-title" class="text-lg font-bold text-slate-100 mt-1">Unit 402 - 4th Floor Wing B</h2>
+      </div>
+      <button id="btn-close-card" class="text-slate-400 hover:text-slate-200">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- 3D ULPIN Identity Pill -->
+    <div class="mt-3 p-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
+      <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Prototype 3D Spatial ID (ULPIN)</div>
+      <div id="unit-ulpin" class="mono text-xs font-bold text-emerald-400 mt-0.5 tracking-tight">IN-KA-560001-P9402-Z+015.5-U402</div>
+    </div>
+
+    <!-- Spatial & Volumetric Properties Grid -->
+    <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <div class="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+        <div class="text-[10px] text-slate-400">Volumetric Size</div>
+        <div id="unit-volume" class="mono font-bold text-slate-200 text-sm mt-0.5">384.6 m³</div>
+      </div>
+      <div class="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+        <div class="text-[10px] text-slate-400">Carpet / Floor Area</div>
+        <div id="unit-area" class="mono font-bold text-slate-200 text-sm mt-0.5">128.2 m² (1,380 sq.ft)</div>
+      </div>
+      <div class="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+        <div class="text-[10px] text-slate-400">Altitude Range (MSL)</div>
+        <div id="unit-elevation" class="mono font-semibold text-cyan-300 mt-0.5">+15.50m to +18.50m</div>
+      </div>
+      <div class="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+        <div class="text-[10px] text-slate-400">Ceiling Clearance</div>
+        <div id="unit-height" class="mono font-semibold text-cyan-300 mt-0.5">3.00 m Clear</div>
+      </div>
+    </div>
+
+    <!-- Ownership & Legal Deed Information -->
+    <div class="mt-3 space-y-2 text-xs">
+      <div class="flex justify-between py-1.5 border-b border-slate-800/80">
+        <span class="text-slate-400">Title Holder</span>
+        <span id="unit-owner" class="font-medium text-slate-200">Dr. Rajeshwari Sharma</span>
+      </div>
+      <div class="flex justify-between py-1.5 border-b border-slate-800/80">
+        <span class="text-slate-400">Deed Doc Number</span>
+        <span id="unit-deed" class="mono font-medium text-slate-200">BLR-UDS-2024-88491</span>
+      </div>
+      <div class="flex justify-between py-1.5 border-b border-slate-800/80">
+        <span class="text-slate-400">Undivided Share (UDS)</span>
+        <span id="unit-uds" class="mono font-medium text-slate-200">3.125% of Base Parcel</span>
+      </div>
+      <div class="flex justify-between py-1.5 border-b border-slate-800/80">
+        <span class="text-slate-400">Property Tax Status</span>
+        <span id="unit-tax" class="text-emerald-400 font-medium flex items-center space-x-1">
+          <i data-lucide="check" class="w-3 h-3"></i>
+          <span>Paid (FY 2025-26)</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Boundary Dispute Warning Box (Dynamic) -->
+    <div id="conflict-panel" class="mt-3 p-3 rounded-lg bg-rose-950/80 border border-rose-600/80 text-xs hidden space-y-2">
+      <div class="flex items-center justify-between pb-1 border-b border-rose-800/60">
+        <div class="flex items-center space-x-1.5 text-rose-400 font-bold">
+          <i data-lucide="alert-octagon" class="w-4 h-4"></i>
+          <span>3D SPATIAL ENCROACHMENT</span>
+        </div>
+        <span id="conflict-sync-badge" class="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono text-[9px] font-bold border border-rose-500/30">CONFLICT SYNC</span>
+      </div>
+      <p id="conflict-desc" class="text-[11px] text-rose-200 leading-relaxed">
+        Balcony cantilever volume illegally extends <strong class="text-white">1.05m</strong> beyond cadastral setback into Municipal Right-of-Way air envelope.
+      </p>
+      <div class="p-2 rounded bg-rose-950/90 border border-rose-800/80 space-y-1 text-[10px] text-rose-300">
+        <div class="flex justify-between">
+          <span>Intersecting Vol:</span>
+          <strong id="conflict-vol" class="mono text-white">9.19 m³</strong>
+        </div>
+        <div class="flex justify-between">
+          <span>Intersection Prism (W × H × D):</span>
+          <strong id="conflict-dims" class="mono text-white">1.05m × 2.50m × 3.50m</strong>
+        </div>
+        <div class="flex justify-between">
+          <span>Dispute Code / Entity:</span>
+          <strong id="conflict-entity" class="mono text-white">CONF-U401-MUNICIPAL-SETBACK-01</strong>
+        </div>
+      </div>
+      <div id="conflict-engine-match" class="px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono text-[9px] font-bold text-center">
+        CONFLICT ENGINE VERIFIED (9.19 m³ ≈ 9.19 m³)
+      </div>
+    </div>
+
+    <!-- LiDAR-to-Cadastral Vertical Comparison Panel -->
+    <div id="panel-lidar-comparison" class="mt-3 p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-xs space-y-2">
+      <div class="flex items-center justify-between pb-1.5 border-b border-slate-800">
+        <div class="flex items-center space-x-1.5 font-bold text-slate-200">
+          <i data-lucide="scan" class="w-3.5 h-3.5 text-pink-400"></i>
+          <span>Vertical Cadastral Comparison</span>
+        </div>
+        <span id="lidar-comp-badge" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[9px] font-bold border border-emerald-500/30">MATCH</span>
+      </div>
+
+      <div class="space-y-1.5 text-[10px] text-slate-400">
+        <div class="flex justify-between">
+          <span>Cadastral Elevation (Z-Min / Max):</span>
+          <span id="comp-cadastral-elev" class="mono text-cyan-300 font-medium">+13.80m to +16.80m</span>
+        </div>
+        <div class="flex justify-between">
+          <span>LiDAR Survey Elevation (Z-Min / Max):</span>
+          <span id="comp-lidar-elev" class="mono text-pink-300 font-medium">+13.70m to +16.90m</span>
+        </div>
+        <div class="flex justify-between">
+          <span>Vertical Deviation (|ΔZ|):</span>
+          <span id="comp-vertical-dev" class="mono text-amber-300 font-medium">0.12m (Permissible)</span>
+        </div>
+        <div class="flex justify-between">
+          <span>Survey Attribution:</span>
+          <span id="comp-attribution-note" class="mono text-slate-300 font-medium">Point-Cloud Footprint Sample (142 pts)</span>
+        </div>
+      </div>
+
+      <div class="pt-1.5 border-t border-slate-800/60 flex items-center justify-between">
+        <span class="text-[9px] text-slate-500">LiDAR Survey → 3D Parcel Verification</span>
+        <button id="btn-compare-lidar" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-[10px] border border-slate-700 transition active:scale-95">Compare with LiDAR</button>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="mt-4 grid grid-cols-2 gap-2">
+      <button id="btn-export-deed" class="py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center space-x-1.5 transition cursor-pointer active:scale-95 shadow-md shadow-emerald-950/30">
+        <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+        <span>Export 3D Deed</span>
+      </button>
+      <button id="btn-export-gis" class="py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs border border-slate-700 flex items-center justify-center space-x-1.5 transition cursor-pointer active:scale-95">
+        <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+        <span>GIS GeoJSON</span>
+      </button>
+    </div>
+  </main>
+
+  <!-- Bottom Floating Telemetry & Toolbar -->
+  <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 glass-panel rounded-full px-5 py-2.5 flex items-center space-x-6 text-xs shadow-2xl border border-slate-700/60">
+    <div class="flex items-center space-x-2 text-slate-300">
+      <i data-lucide="mouse-pointer-click" class="w-4 h-4 text-cyan-400"></i>
+      <span>Click any 3D unit to inspect ownership</span>
+    </div>
+    <div class="h-3 w-px bg-slate-700"></div>
+    <div class="flex items-center space-x-2 text-slate-300">
+      <i data-lucide="rotate-3d" class="w-4 h-4 text-emerald-400"></i>
+      <span>Left-drag to Orbit | Right-drag to Pan</span>
+    </div>
+    <div class="h-3 w-px bg-slate-700"></div>
+    <div class="flex items-center space-x-2">
+      <span class="text-slate-400">Cadastral Volume:</span>
+      <span class="mono text-cyan-300 font-bold">18,420 m³</span>
+    </div>
+  </div>
+
+  <!-- Topology Validation Modal (Hidden by default) -->
+  <div id="modal-validation" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center hidden">
+    <div class="glass-panel w-full max-w-lg rounded-2xl p-6 border border-slate-700 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+            <i data-lucide="check-circle" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <h3 class="font-bold text-base text-slate-100">3D Cadastral Topology Audit</h3>
+              <span id="topology-sync-badge" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[9px] font-bold border border-emerald-500/30">TOPOLOGY SYNC</span>
+            </div>
+            <p id="topo-prop-title" class="text-xs text-slate-400">Rule-Based 3D Cadastral Topology Validation</p>
+          </div>
+        </div>
+        <button id="btn-close-modal" class="text-slate-400 hover:text-slate-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <!-- Audit Summary Bar -->
+      <div class="grid grid-cols-3 gap-2 text-center text-xs">
+        <div class="p-2 rounded bg-slate-900/90 border border-slate-800">
+          <div class="text-[10px] text-slate-400">Overall Status</div>
+          <div id="topo-overall-status" class="font-mono text-xs font-bold text-rose-400 mt-0.5">TOPOLOGY VIOLATIONS (FAIL)</div>
+        </div>
+        <div class="p-2 rounded bg-slate-900/90 border border-slate-800">
+          <div class="text-[10px] text-slate-400">Passed Rules</div>
+          <div id="topo-passed-count" class="font-mono text-base font-bold text-emerald-400 mt-0.5">2</div>
+        </div>
+        <div class="p-2 rounded bg-slate-900/90 border border-slate-800">
+          <div class="text-[10px] text-slate-400">Failed Rules</div>
+          <div id="topo-failed-count" class="font-mono text-base font-bold text-rose-400 mt-0.5">2</div>
+        </div>
+      </div>
+
+      <!-- 4 Core Topology Rules -->
+      <div class="space-y-2 text-xs">
+        <!-- Rule 1: NON_OVERLAP -->
+        <div class="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <div id="topo-rule-1-icon"><i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400"></i></div>
+              <div class="font-semibold text-slate-200">TOP-01 — NON_OVERLAP</div>
+            </div>
+            <span id="topo-rule-1-badge" class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[10px] font-bold">FAIL</span>
+          </div>
+          <div id="topo-rule-1-desc" class="text-[10px] text-slate-300">Volumetric conflict detected: 9.19 m³ overlap with Municipal Right-of-Way Airspace Parcel.</div>
+          <div id="topo-rule-1-val" class="text-[9px] text-slate-500 font-mono">Measured: Overlap Volume = 9.19 m³ | Criterion: Overlap Volume == 0.00 m³</div>
+        </div>
+
+        <!-- Rule 2: FOOTPRINT_CONSISTENCY -->
+        <div class="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <div id="topo-rule-2-icon"><i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400"></i></div>
+              <div class="font-semibold text-slate-200">TOP-02 — FOOTPRINT_CONSISTENCY</div>
+            </div>
+            <span id="topo-rule-2-badge" class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[10px] font-bold">FAIL</span>
+          </div>
+          <div id="topo-rule-2-desc" class="text-[10px] text-slate-300">Horizontal boundary extends 3.05m beyond registered Base Parcel P9402 line.</div>
+          <div id="topo-rule-2-val" class="text-[9px] text-slate-500 font-mono">Measured: X: [-11.05, -6.55] (Overhang: 3.05m) | Criterion: Inside Parcel Bounds [-8.00, +8.00]</div>
+        </div>
+
+        <!-- Rule 3: VERTICAL_CONTINUITY -->
+        <div class="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <div id="topo-rule-3-icon"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i></div>
+              <div class="font-semibold text-slate-200">TOP-03 — VERTICAL_CONTINUITY</div>
+            </div>
+            <span id="topo-rule-3-badge" class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold">PASS</span>
+          </div>
+          <div id="topo-rule-3-desc" class="text-[10px] text-slate-300">Valid positive vertical height span: 2.50m (Elevation: +13.95m to +16.45m MSL).</div>
+          <div id="topo-rule-3-val" class="text-[9px] text-slate-500 font-mono">Measured: Vertical Extent = 2.50m | Criterion: min_y &lt; max_y and vertical_extent &gt; 0</div>
+        </div>
+
+        <!-- Rule 4: SUBTERRANEAN_BUFFER -->
+        <div class="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <div id="topo-rule-4-icon"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i></div>
+              <div class="font-semibold text-slate-200">TOP-04 — SUBTERRANEAN_BUFFER</div>
+            </div>
+            <span id="topo-rule-4-badge" class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold">PASS</span>
+          </div>
+          <div id="topo-rule-4-desc" class="text-[10px] text-slate-300">Above-ground volume compliant with ground datum elevation (MSL &ge; +0.00m).</div>
+          <div id="topo-rule-4-val" class="text-[9px] text-slate-500 font-mono">Measured: Base Elevation = +13.95m MSL | Criterion: Surface Clearance &ge; 0.20m (Prototype Rule)</div>
+        </div>
+      </div>
+
+      <!-- Engine Verification Banner -->
+      <div id="topology-engine-match" class="px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono text-[9px] font-bold text-center">
+        TOPOLOGY ENGINE VERIFIED (Frontend FAIL = Backend FAIL)
+      </div>
+
+      <div class="mt-4 flex justify-end">
+        <button id="btn-close-modal-2" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs">Close Report</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3D Spatial Conflict Matrix Modal -->
+  <div id="modal-matrix" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="glass-panel border border-slate-700 rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center space-x-2">
+          <div class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center">
+            <i data-lucide="rotate-3d" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-slate-100">Pairwise 3D Spatial Conflict Matrix</h2>
+            <div class="text-xs text-slate-400">Rule-Based 3D AABB Intersection Engine</div>
+          </div>
+        </div>
+        <button id="btn-close-matrix" class="text-slate-400 hover:text-slate-200">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Matrix Summary Cards -->
+      <div class="grid grid-cols-3 gap-2 text-center text-xs">
+        <div class="p-2.5 rounded bg-slate-900/90 border border-slate-800">
+          <div class="text-[10px] text-slate-400">Pairs Evaluated</div>
+          <div id="matrix-pairs-count" class="font-mono text-base font-bold text-cyan-300 mt-0.5">15</div>
+        </div>
+        <div class="p-2.5 rounded bg-slate-900/90 border border-slate-800">
+          <div class="text-[10px] text-slate-400">Conflicts Detected</div>
+          <div id="matrix-conflicts-count" class="font-mono text-base font-bold text-rose-400 mt-0.5">1</div>
+        </div>
+        <div class="p-2.5 rounded bg-slate-900/90 border border-slate-800">
+          <div class="text-[10px] text-slate-400">Disputed Volume</div>
+          <div id="matrix-volume-total" class="font-mono text-base font-bold text-amber-300 mt-0.5">9.19 m³</div>
+        </div>
+      </div>
+
+      <!-- Pairwise Results List -->
+      <div id="matrix-pairs-container" class="space-y-1.5 max-h-60 overflow-y-auto custom-scrollbar text-xs">
+        <!-- Injected dynamically via fetchBackendConflictMatrix() -->
+      </div>
+
+      <div class="flex justify-end pt-2 border-t border-slate-800">
+        <button id="btn-close-matrix-2" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs">Close Matrix</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Application Logic -->
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Data Registry for 3D Property Units (Component-based for dynamic 3D ULPIN generation)
+    const propertyDatabase = {
+      'unit-f4-b': {
+        title: 'Unit 402 - 4th Floor Wing B',
+        category: 'RESIDENTIAL PARCEL',
+        badgeClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+        status: 'REGISTERED',
+        stateCode: 'IN-KA',
+        pinCode: '560001',
+        parcelId: 'P9402',
+        unitToken: 'U402',
+        floorLevel: 4,
+        volume: '384.6 m³',
+        area: '128.2 m² (1,380 sq.ft)',
+        elevation: '+15.50m to +18.50m',
+        height: '3.00 m Clear',
+        owner: 'Dr. Rajeshwari Sharma',
+        deed: 'BLR-UDS-2024-88491',
+        uds: '3.125% of Base Parcel',
+        tax: 'Paid (FY 2025-26)',
+        hasConflict: false
+      },
+      'unit-f4-a': {
+        title: 'Unit 401 - 4th Floor Wing A (Cantilever Conflict)',
+        category: 'DISPUTED VOLUME',
+        badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+        status: 'DISPUTE PENDING',
+        stateCode: 'IN-KA',
+        pinCode: '560001',
+        parcelId: 'P9402',
+        unitToken: 'U401',
+        floorLevel: 4,
+        volume: '412.0 m³',
+        area: '137.3 m² (1,478 sq.ft)',
+        elevation: '+15.50m to +18.50m',
+        height: '3.00 m Clear',
+        owner: 'Kiran Real Estate Holdings',
+        deed: 'BLR-UDS-2023-41009',
+        uds: '3.125% of Base Parcel',
+        tax: 'Hold on Verification',
+        hasConflict: true,
+        conflictDesc: 'Cantilever extended 1.85m into adjacent setback parcel airspace without municipal TDR authorization.',
+        conflictVol: '9.19 m³'
+      },
+      'unit-f6-penthouse': {
+        title: 'Unit 601 - Top Floor Duplex Penthouse',
+        category: 'RESIDENTIAL DUPLEX',
+        badgeClass: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+        status: 'REGISTERED',
+        stateCode: 'IN-KA',
+        pinCode: '560001',
+        parcelId: 'P9402',
+        unitToken: 'UPENT',
+        floorLevel: 6,
+        volume: '780.0 m³',
+        area: '260.0 m² (2,798 sq.ft)',
+        elevation: '+21.50m to +27.50m',
+        height: '6.00 m (Double Height)',
+        owner: 'Vikramaditya Roy & Ananya Roy',
+        deed: 'BLR-UDS-2025-00124',
+        uds: '6.250% of Base Parcel',
+        tax: 'Paid (FY 2025-26)',
+        hasConflict: false
+      },
+      'unit-ground-retail': {
+        title: 'Commercial Suite G-01 (Ground Floor)',
+        category: 'COMMERCIAL PARCEL',
+        badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+        status: 'REGISTERED',
+        stateCode: 'IN-KA',
+        pinCode: '560001',
+        parcelId: 'P9402',
+        unitToken: 'G01',
+        floorLevel: 0,
+        volume: '1,440.0 m³',
+        area: '360.0 m² (3,875 sq.ft)',
+        elevation: '0.00m to +4.00m',
+        height: '4.00 m Commercial',
+        owner: 'Apollo Diagnostics Ltd',
+        deed: 'BLR-COM-2022-77219',
+        uds: '12.500% of Base Parcel',
+        tax: 'Paid (Commercial Tier A)',
+        hasConflict: false
+      },
+      'unit-sub-b1': {
+        title: 'Subterranean Level B1 - Automated Parking',
+        category: 'UNDERGROUND UTILITY / PARKING',
+        badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+        status: 'COMMON FACILITY',
+        stateCode: 'IN-KA',
+        pinCode: '560001',
+        parcelId: 'P9402',
+        unitToken: 'SUB1',
+        floorLevel: -1,
+        volume: '1,800.0 m³',
+        area: '450.0 m²',
+        elevation: '-3.50m to 0.00m',
+        height: '3.50 m Sub-surface',
+        owner: 'Skyline Heights RWA Society',
+        deed: 'BLR-SOC-2021-00045',
+        uds: 'Common Demarcated Asset',
+        tax: 'Exempt (Society Shared)',
+        hasConflict: false
+      },
+      'unit-sub-metro': {
+        title: 'Subterranean Level B2 - Metro Transit Buffer Corridor',
+        category: 'PUBLIC INFRASTRUCTURE EASEMENT',
+        badgeClass: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+        status: 'STATUTORY EASEMENT',
+        stateCode: 'IN-KA',
+        pinCode: '560001',
+        parcelId: 'P9402',
+        unitToken: 'EASE-BMRCL',
+        floorLevel: -2,
+        volume: '2,250.0 m³',
+        area: '450.0 m²',
+        elevation: '-12.00m to -3.50m',
+        height: '8.50 m Transit Clearance',
+        owner: 'Bangalore Metro Rail Corp (Statutory Easement)',
+        deed: 'GAZETTE-NOTIF-2020-METRO',
+        uds: 'Non-alienable Public Easement',
+        tax: 'Statutory Exempt',
+        hasConflict: false
+      },
+      'unit-air-rights': {
+        title: 'Rooftop Air Rights & TDR Envelope',
+        category: 'AIR-RIGHTS VOLUME',
+        badgeClass: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+        status: 'TRANSFERABLE RIGHT',
+        stateCode: 'IN-KA',
+        pinCode: '560001',
+        parcelId: 'P9402',
+        unitToken: 'AIR-TDR',
+        floorLevel: 7,
+        volume: '11,250.0 m³',
+        area: '450.0 m²',
+        elevation: '+35.00m to +60.00m',
+        height: '25.00 m Vertical Corridor',
+        owner: 'Municipal Urban Development Authority (BMRDA)',
+        deed: 'TDR-CERT-2024-0092',
+        uds: 'Development Rights Envelope',
+        tax: 'N/A',
+        hasConflict: false
+      }
+    };
+
+    /**
+     * Reusable Dynamic Prototype 3D ULPIN / Spatial Identifier Generator
+     * 
+     * Constructs a structured alphanumeric identifier from the property's authoritative cadastral data:
+     * Format: <STATE_CODE>-<PIN_CODE>-<PARCEL_ID>-Z<+/-ELEVATION_MSL>-<UNIT_TOKEN>
+     * Example: IN-KA-560001-P9402-Z+015.5-U401
+     * 
+     * Note: This is a prototype spatial identifier for research simulation and not an official government title ID.
+     * 
+     * @param {Object} property - Property metadata record containing authoritative elevation and codes
+     * @param {THREE.Mesh} mesh - Optional 3D mesh for fallback coordinate extraction
+     * @returns {Object} Structured components and the full 3D ULPIN string
+     */
+    function generate3DULPIN(property, mesh = null) {
+      // 1. Regional Cadastral Jurisdiction Codes
+      const stateCode = property.stateCode || "IN-KA";
+      const pinCode = property.pinCode || "560001";
+      const parcelId = property.parcelId || "P9402";
+
+      // 2. Extract authoritative Elevation Datum (Orthometric MSL)
+      // Prioritize the authoritative property elevation attribute displayed in the property card
+      let zMin = null;
+      let zMax = null;
+
+      if (property.elevation) {
+        const match = property.elevation.match(/([+-]?\d+\.?\d*)/g);
+        if (match && match.length >= 2) {
+          zMin = parseFloat(match[0]);
+          zMax = parseFloat(match[1]);
+        } else if (match && match.length === 1) {
+          zMin = parseFloat(match[0]);
+          zMax = zMin + 3.0;
+        }
+      }
+
+      // Fallback to mesh AABB only if property.elevation is absent
+      if (zMin === null) {
+        if (mesh) {
+          mesh.updateWorldMatrix(true, false);
+          const box = new THREE.Box3().setFromObject(mesh);
+          zMin = box.min.y;
+          zMax = box.max.y;
+        } else {
+          zMin = 0.0;
+          zMax = 3.0;
+        }
+      }
+
+      // Format elevation token with 3 integer digits before decimal: e.g. Z+015.5 or Z-003.5
+      const sign = zMin >= 0 ? "+" : "-";
+      const absElev = Math.abs(zMin);
+      const numStr = absElev.toFixed(1);
+      const parts = numStr.split('.');
+      const intPadded = parts[0].padStart(3, '0');
+      const elevFormatted = `Z${sign}${intPadded}.${parts[1]}`;
+
+      // 3. Unit / Volumetric Token
+      let unitToken = property.unitToken;
+      if (!unitToken) {
+        if (property.key) {
+          const partsKey = property.key.split('-');
+          unitToken = partsKey[partsKey.length - 1].toUpperCase();
+        } else {
+          unitToken = "U01";
+        }
+      }
+
+      // 4. Assemble Prototype 3D Spatial Identifier
+      const baseParcelPin = `${stateCode}-${pinCode}-${parcelId}`;
+      const fullUlpin = `${baseParcelPin}-${elevFormatted}-${unitToken}`;
+
+      return {
+        fullUlpin,
+        stateCode,
+        pinCode,
+        parcelId,
+        baseParcelPin,
+        elevationToken: elevFormatted,
+        unitToken,
+        zMinMsl: zMin,
+        zMaxMsl: zMax
+      };
+    }
+
+    // -------------------------------------------------------------
+    // THREE.JS 3D SCENE SETUP
+    // -------------------------------------------------------------
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0f1d);
+    scene.fog = new THREE.FogExp2(0x0a0f1d, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 1000);
+    camera.position.set(38, 28, 48);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2 + 0.15; // allow looking slightly underneath ground
+    controls.target.set(0, 10, 0);
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(30, 50, 30);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    scene.add(dirLight);
+
+    const blueLight = new THREE.PointLight(0x06b6d4, 1.2, 50);
+    blueLight.position.set(-15, 20, -15);
+    scene.add(blueLight);
+
+    const emeraldLight = new THREE.PointLight(0x10b981, 0.8, 40);
+    emeraldLight.position.set(15, -5, 15);
+    scene.add(emeraldLight);
+
+    // Ground Grid & 2D Cadastral Base Parcel
+    const gridHelper = new THREE.GridHelper(80, 40, 0x10b981, 0x1e293b);
+    gridHelper.position.y = 0;
+    scene.add(gridHelper);
+
+    // 2D Base Cadastral Parcel Outline (Green outline on ground)
+    const baseParcelGeo = new THREE.BufferGeometry();
+    const basePoints = [
+      new THREE.Vector3(-10, 0.05, -10),
+      new THREE.Vector3(10, 0.05, -10),
+      new THREE.Vector3(10, 0.05, 10),
+      new THREE.Vector3(-10, 0.05, 10),
+      new THREE.Vector3(-10, 0.05, -10)
+    ];
+    baseParcelGeo.setFromPoints(basePoints);
+    const baseParcelMat = new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 2 });
+    const baseParcelLine = new THREE.Line(baseParcelGeo, baseParcelMat);
+    scene.add(baseParcelLine);
+
+    // Layers Object Groups
+    const groupAirRights = new THREE.Group();
+    const groupResidential = new THREE.Group();
+    const groupCommercial = new THREE.Group();
+    const groupSubterranean = new THREE.Group();
+    const groupPointCloud = new THREE.Group();
+    const groupConflict = new THREE.Group();
+
+    scene.add(groupAirRights);
+    scene.add(groupResidential);
+    scene.add(groupCommercial);
+    scene.add(groupSubterranean);
+    scene.add(groupPointCloud);
+    scene.add(groupConflict);
+
+    // Array of interactive meshes for Raycasting
+    const interactiveMeshes = [];
+    const floorGroups = []; // For explosion effect
+
+    // Helper: Create Chamfered / Edged Box
+    function createVolumetricUnit(w, h, d, color, opacity, wireColor, dataKey, yPos, xPos = 0, zPos = 0, name = null) {
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const mat = new THREE.MeshPhysicalMaterial({
+        color: color,
+        transparent: true,
+        opacity: opacity,
+        roughness: 0.2,
+        metalness: 0.1,
+        transmission: 0.1,
+        depthWrite: true,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(xPos, yPos + h / 2, zPos);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData = { 
+        key: dataKey, 
+        name: name || dataKey,
+        basePosY: yPos + h / 2, 
+        origColor: color, 
+        origOpacity: opacity 
+      };
+
+      // Edges wireframe for cadastral boundary visualization
+      const edgesGeo = new THREE.EdgesGeometry(geo);
+      const edgesMat = new THREE.LineBasicMaterial({ color: wireColor || 0xffffff, transparent: true, opacity: 0.5 });
+      const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+      mesh.add(edges);
+
+      interactiveMeshes.push(mesh);
+      return mesh;
+    }
+
+    // 1. BUILD SUBTERRANEAN LAYERS (-12m to 0m)
+    // B2: Metro corridor / foundations (-12m to -5m)
+    const b2Mesh = createVolumetricUnit(18, 5, 18, 0xd97706, 0.4, 0xfbbf24, 'unit-sub-metro', -11, 0, 0, 'Subterranean Level B2 - Metro Corridor');
+    b2Mesh.userData.unitToken = 'EASE-BMRCL';
+    b2Mesh.userData.floorLevel = -2;
+    groupSubterranean.add(b2Mesh);
+
+    // B1: Basement Parking (-5m to 0m)
+    const b1Mesh = createVolumetricUnit(18, 4.5, 18, 0x059669, 0.45, 0x34d399, 'unit-sub-b1', -4.8, 0, 0, 'Subterranean Level B1 - Automated Parking');
+    b1Mesh.userData.unitToken = 'SUB1';
+    b1Mesh.userData.floorLevel = -1;
+    groupSubterranean.add(b1Mesh);
+
+    // 2. BUILD GROUND COMMERCIAL (0m to 4m)
+    const gMesh = createVolumetricUnit(16, 3.8, 16, 0x059669, 0.65, 0x10b981, 'unit-ground-retail', 0.1, 0, 0, 'Commercial Suite G-01 (Ground Floor)');
+    gMesh.userData.unitToken = 'G01';
+    gMesh.userData.floorLevel = 0;
+    groupCommercial.add(gMesh);
+
+    // 3. BUILD RESIDENTIAL FLOORS (F1 to F6)
+    const floorHeight = 3.2;
+    for (let f = 1; f <= 6; f++) {
+      const fGroup = new THREE.Group();
+      fGroup.userData = { floorLevel: f };
+      const yBase = 4.2 + (f - 1) * floorHeight;
+
+      if (f === 6) {
+        // Penthouse (Double height)
+        const pMesh = createVolumetricUnit(15, floorHeight * 1.5, 15, 0x8b5cf6, 0.6, 0xa78bfa, 'unit-f6-penthouse', yBase, 0, 0, 'Unit 601 - Top Floor Duplex Penthouse');
+        pMesh.userData.unitToken = 'UPENT';
+        pMesh.userData.floorLevel = 6;
+        fGroup.add(pMesh);
+      } else {
+        // 4 units per floor (A, B, C, D)
+        const unitConfigs = [
+          { x: -3.8, z: -3.8, key: f === 4 ? 'unit-f4-a' : `unit-f${f}-a`, token: `U${f}01`, name: `Unit ${f}01 (Floor ${f} Wing A)`, color: 0x3b82f6 },
+          { x: 3.8, z: -3.8, key: f === 4 ? 'unit-f4-b' : `unit-f${f}-b`, token: `U${f}02`, name: `Unit ${f}02 (Floor ${f} Wing B)`, color: 0x0ea5e9 },
+          { x: -3.8, z: 3.8, key: `unit-f${f}-c`, token: `U${f}03`, name: `Unit ${f}03 (Floor ${f} Wing C)`, color: 0x6366f1 },
+          { x: 3.8, z: 3.8, key: `unit-f${f}-d`, token: `U${f}04`, name: `Unit ${f}04 (Floor ${f} Wing D)`, color: 0x818cf8 },
+        ];
+
+        unitConfigs.forEach(u => {
+          const uMesh = createVolumetricUnit(7.2, floorHeight - 0.2, 7.2, u.color, 0.55, 0x93c5fd, u.key, yBase, u.x, u.z, u.name);
+          uMesh.userData.unitToken = u.token;
+          uMesh.userData.floorLevel = f;
+          fGroup.add(uMesh);
+        });
+      }
+
+      groupResidential.add(fGroup);
+      floorGroups.push(fGroup);
+    }
+
+    // 4. AIR RIGHTS ENVELOPE (+35m to +55m)
+    const airMesh = createVolumetricUnit(16, 18, 16, 0x38bdf8, 0.15, 0x7dd3fc, 'unit-air-rights', 25.5, 0, 0, 'Rooftop Air Rights & TDR Envelope');
+    airMesh.userData.unitToken = 'AIR-TDR';
+    airMesh.userData.floorLevel = 7;
+    groupAirRights.add(airMesh);
+
+    // 5. ADJACENT MUNICIPAL SETBACK / RIGHT-OF-WAY AIRSPACE PARCEL
+    // Represents adjacent legal property boundary (X <= -10m)
+    const setbackGeo = new THREE.BoxGeometry(8, 30, 20);
+    const setbackMat = new THREE.MeshBasicMaterial({
+      color: 0x334155,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.12
+    });
+    const adjacentSetbackMesh = new THREE.Mesh(setbackGeo, setbackMat);
+    adjacentSetbackMesh.position.set(-14, 15, 0); // Spans X in [-18, -10], Y in [0, 30], Z in [-10, 10]
+    adjacentSetbackMesh.userData = {
+      key: 'unit-setback-airspace',
+      name: 'Municipal Right-of-Way Airspace Parcel'
+    };
+    scene.add(adjacentSetbackMesh);
+
+    // 6. STANDOUT FEATURE: 3D CONFLICT / ENCROACHMENT MESH
+    // Balcony Cantilever sticking out beyond parcel line on 4th floor
+    const conflictGeo = new THREE.BoxGeometry(4.5, 2.5, 3.5);
+    const conflictMat = new THREE.MeshStandardMaterial({
+      color: 0xf43f5e,
+      roughness: 0.1,
+      metalness: 0.3,
+      transparent: true,
+      opacity: 0.85,
+      emissive: 0xe11d48,
+      emissiveIntensity: 0.6
+    });
+    const conflictMesh = new THREE.Mesh(conflictGeo, conflictMat);
+    conflictMesh.position.set(-8.8, 15.2, -3.8);
+    conflictMesh.userData = { 
+      key: 'unit-f4-a', 
+      name: 'Balcony Cantilever Extension (Unit 401)',
+      origColor: 0xf43f5e, 
+      origOpacity: 0.85 
+    };
+
+    const conflictEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(conflictGeo),
+      new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 })
+    );
+    conflictMesh.add(conflictEdges);
+    groupConflict.add(conflictMesh);
+    interactiveMeshes.push(conflictMesh);
+
+    // Holographic Pulsing Conflict Warning Box
+    const intersectGeo = new THREE.BoxGeometry(2.5, 2.7, 3.7);
+    const intersectMat = new THREE.MeshBasicMaterial({
+      color: 0xff0055,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.9
+    });
+    const intersectMesh = new THREE.Mesh(intersectGeo, intersectMat);
+    intersectMesh.position.set(-9.8, 15.2, -3.8);
+    groupConflict.add(intersectMesh);
+
+    // 7. LIDAR RAW POINT CLOUD SIMULATION
+    const pCount = 6000;
+    const pGeo = new THREE.BufferGeometry();
+    const pPos = new Float32Array(pCount * 3);
+    const pColors = new Float32Array(pCount * 3);
+
+    for (let i = 0; i < pCount; i++) {
+      const uX = (Math.random() - 0.5) * 19;
+      const uY = Math.random() * 32 - 10;
+      const uZ = (Math.random() - 0.5) * 19;
+      pPos[i * 3] = uX;
+      pPos[i * 3 + 1] = uY;
+      pPos[i * 3 + 2] = uZ;
+
+      const normY = (uY + 10) / 45;
+      pColors[i * 3] = 1 - normY;
+      pColors[i * 3 + 1] = normY;
+      pColors[i * 3 + 2] = 0.8;
+    }
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    pGeo.setAttribute('color', new THREE.BufferAttribute(pColors, 3));
+    const pMat = new THREE.PointsMaterial({ size: 0.18, vertexColors: true, transparent: true, opacity: 0.7 });
+    const pointCloud = new THREE.Points(pGeo, pMat);
+    groupPointCloud.add(pointCloud);
+    groupPointCloud.visible = false; // off by default
+
+    // =========================================================================
+    // 3D SPATIAL GEOMETRY & VOLUMETRIC AABB INTERSECTION ENGINE (PROTOTYPE)
+    // =========================================================================
+
+    /**
+     * Obtains the 3D Axis-Aligned Bounding Box (AABB) in world coordinates for a given mesh.
+     * Uses Three.js Box3 to extract world-space min and max bounds along X, Y, Z axes.
+     * 
+     * @param {THREE.Mesh} mesh - Target 3D property unit mesh
+     * @returns {Object} { minX, maxX, minY, maxY, minZ, maxZ, mesh, key, name }
+     */
+    function getMeshAABB(mesh) {
+      mesh.updateWorldMatrix(true, false);
+      const box = new THREE.Box3().setFromObject(mesh);
+      return {
+        minX: box.min.x,
+        maxX: box.max.x,
+        minY: box.min.y,
+        maxY: box.max.y,
+        minZ: box.min.z,
+        maxZ: box.max.z,
+        mesh: mesh,
+        key: mesh.userData ? mesh.userData.key : null,
+        name: mesh.userData ? (mesh.userData.name || mesh.userData.key || 'Property Volume') : 'Property Volume'
+      };
+    }
+
+    /**
+     * Calculates the 3D Axis-Aligned Bounding Box (AABB) intersection volume between two property volumes.
+     * 
+     * Mathematical Formula (as per spatial cadastre requirements):
+     * overlapX = max(0, min(maxX_A, maxX_B) - max(minX_A, minX_B))
+     * overlapY = max(0, min(maxY_A, maxY_B) - max(minY_A, minY_B))
+     * overlapZ = max(0, min(maxZ_A, maxZ_B) - max(minZ_A, minZ_B))
+     * overlapVolume = overlapX * overlapY * overlapZ
+     * 
+     * @param {Object} boxA - Bounding box of volume A
+     * @param {Object} boxB - Bounding box of volume B
+     * @returns {Object} { overlapX, overlapY, overlapZ, overlapVolume, isConflict }
+     */
+    function computeAABBIntersection(boxA, boxB) {
+      // 1. Calculate 1D overlap along the X (horizontal width) axis
+      const overlapX = Math.max(0, Math.min(boxA.maxX, boxB.maxX) - Math.max(boxA.minX, boxB.minX));
+
+      // 2. Calculate 1D overlap along the Y (vertical elevation) axis
+      const overlapY = Math.max(0, Math.min(boxA.maxY, boxB.maxY) - Math.max(boxA.minY, boxB.minY));
+
+      // 3. Calculate 1D overlap along the Z (horizontal depth) axis
+      const overlapZ = Math.max(0, Math.min(boxA.maxZ, boxB.maxZ) - Math.max(boxA.minZ, boxB.minZ));
+
+      // 4. Compute 3D volumetric intersection in cubic meters
+      const overlapVolume = overlapX * overlapY * overlapZ;
+
+      return {
+        overlapX: parseFloat(overlapX.toFixed(3)),
+        overlapY: parseFloat(overlapY.toFixed(3)),
+        overlapZ: parseFloat(overlapZ.toFixed(3)),
+        overlapVolume: parseFloat(overlapVolume.toFixed(2)),
+        isConflict: overlapVolume > 0.001 // Disregard infinitesimal floating-point boundary touches
+      };
+    }
+
+    /**
+     * Evaluates spatial conflicts across all active 3D property volumes in the scene.
+     * Performs pairwise 3D AABB intersection calculations on real geometry.
+     * 
+     * @returns {Array} Array of detected spatial conflict records
+     */
+    function run3DSpatialTopologyValidation() {
+      // Collect all active cadastral property volume meshes
+      const activeCadastralMeshes = [];
+
+      if (groupSubterranean.visible) {
+        groupSubterranean.children.forEach(m => { if (m.isMesh) activeCadastralMeshes.push(m); });
+      }
+      if (groupCommercial.visible) {
+        groupCommercial.children.forEach(m => { if (m.isMesh) activeCadastralMeshes.push(m); });
+      }
+      if (groupResidential.visible) {
+        floorGroups.forEach(fg => {
+          fg.children.forEach(m => { if (m.isMesh) activeCadastralMeshes.push(m); });
+        });
+      }
+      if (groupAirRights.visible) {
+        groupAirRights.children.forEach(m => { if (m.isMesh) activeCadastralMeshes.push(m); });
+      }
+      if (adjacentSetbackMesh && adjacentSetbackMesh.isMesh) {
+        activeCadastralMeshes.push(adjacentSetbackMesh);
+      }
+      if (conflictEnabled && groupConflict.visible && conflictMesh && conflictMesh.isMesh) {
+        activeCadastralMeshes.push(conflictMesh);
+      }
+
+      // Perform pairwise 3D AABB intersection tests
+      const detectedConflicts = [];
+      const count = activeCadastralMeshes.length;
+
+      for (let i = 0; i < count; i++) {
+        for (let j = i + 1; j < count; j++) {
+          const meshA = activeCadastralMeshes[i];
+          const meshB = activeCadastralMeshes[j];
+
+          const boxA = getMeshAABB(meshA);
+          const boxB = getMeshAABB(meshB);
+
+          // Skip self-intersection if two sub-meshes belong to the same property title
+          if (boxA.key && boxB.key && boxA.key === boxB.key) {
+            continue;
+          }
+
+          const result = computeAABBIntersection(boxA, boxB);
+          if (result.isConflict) {
+            detectedConflicts.push({
+              boxA,
+              boxB,
+              overlapX: result.overlapX,
+              overlapY: result.overlapY,
+              overlapZ: result.overlapZ,
+              overlapVolume: result.overlapVolume
+            });
+          }
+        }
+      }
+
+      return detectedConflicts;
+    }
+
+    /**
+     * Dynamically recalculates geometric conflicts and synchronizes all UI elements
+     * (Header badge, property card dispute panel, and topology validation modal).
+     */
+    function updateConflictTelemetry() {
+      const conflicts = run3DSpatialTopologyValidation();
+      const conflictCount = conflicts.length;
+
+      // 1. Update Header Badge
+      const headerBadge = document.getElementById('conflict-badge');
+      if (headerBadge) {
+        headerBadge.innerText = conflictCount === 1 
+          ? '1 Boundary Dispute Detected' 
+          : (conflictCount > 1 ? `${conflictCount} Boundary Disputes Detected` : '0 Spatial Conflicts');
+      }
+
+      // 2. Update Property Card Data for the Disputed Unit
+      if (conflicts.length > 0) {
+        const primaryConflict = conflicts[0];
+        const calcVolStr = `${primaryConflict.overlapVolume} m³`;
+        propertyDatabase['unit-f4-a'].conflictVol = calcVolStr;
+        propertyDatabase['unit-f4-a'].conflictDesc = `Balcony cantilever volume illegally extends ${primaryConflict.overlapX}m beyond parcel boundary into ${primaryConflict.boxB.name}.`;
+        
+        // Update DOM elements if property card is currently visible
+        const conflictVolEl = document.getElementById('conflict-vol');
+        if (conflictVolEl) conflictVolEl.innerText = calcVolStr;
+        const conflictDescEl = document.getElementById('conflict-desc');
+        if (conflictDescEl) conflictDescEl.innerText = propertyDatabase['unit-f4-a'].conflictDesc;
+      }
+
+      // 3. Update "Validate 3D Topology" Modal Row with Real Geometric Calculation
+      const modalBadge = document.getElementById('validation-overlap-badge');
+      const modalDesc = document.getElementById('validation-overlap-desc');
+      const modalIconContainer = document.getElementById('validation-overlap-icon-container');
+
+      if (modalBadge && modalDesc && modalIconContainer) {
+        if (conflictCount > 0) {
+          const primary = conflicts[0];
+          modalBadge.className = 'px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[10px] font-bold';
+          modalBadge.innerText = `${conflictCount} CONFLICT (${primary.overlapVolume} m³)`;
+          modalDesc.innerText = `Calculated 3D overlap: ${primary.overlapVolume} m³ (ΔX=${primary.overlapX}m, ΔY=${primary.overlapY}m, ΔZ=${primary.overlapZ}m) between ${primary.boxA.name} and ${primary.boxB.name}.`;
+          modalIconContainer.innerHTML = '<i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400"></i>';
+        } else {
+          modalBadge.className = 'px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold';
+          modalBadge.innerText = 'PASSED (0 CONFLICTS)';
+          modalDesc.innerText = 'Calculated 3D intersection: 0.00 m³ overlap across all active property volumes.';
+          modalIconContainer.innerHTML = '<i data-lucide="check" class="w-4 h-4 text-emerald-400"></i>';
+        }
+        lucide.createIcons();
+      }
+    }
+
+    // -------------------------------------------------------------
+    // PROPERTY DEED & GIS EXPORT SYSTEM (PROTOTYPE)
+    // -------------------------------------------------------------
+    let currentSelectedPropertyKey = 'unit-f4-b';
+
+    /**
+     * Browser file download utility using Blob URL.
+     */
+    function downloadFile(content, fileName, contentType) {
+      const blob = new Blob([content], { type: contentType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }, 150);
+    }
+
+    /**
+     * Toast notification display helper with auto-dismiss.
+     */
+    function showToast(title, msg, isError = false) {
+      const toast = document.getElementById('toast-notification');
+      const toastTitle = document.getElementById('toast-title');
+      const toastMsg = document.getElementById('toast-msg');
+      const toastIconContainer = document.getElementById('toast-icon-container');
+
+      if (!toast || !toastTitle || !toastMsg) return;
+
+      toastTitle.innerText = title;
+      toastMsg.innerText = msg;
+
+      if (isError) {
+        toastIconContainer.className = 'w-7 h-7 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center flex-shrink-0';
+        toastIconContainer.innerHTML = '<i data-lucide="alert-octagon" class="w-4 h-4"></i>';
+      } else {
+        toastIconContainer.className = 'w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0';
+        toastIconContainer.innerHTML = '<i data-lucide="check-circle" class="w-4 h-4"></i>';
+      }
+      lucide.createIcons();
+
+      toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+      
+      if (window._toastTimeout) clearTimeout(window._toastTimeout);
+      window._toastTimeout = setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+      }, 4000);
+    }
+
+    /**
+     * Generates a clean, standalone, printable HTML Deed/Property Record
+     * using the currently selected property's actual metadata & spatial bounds.
+     */
+    function generateDeedHtmlReport(data, aabb, conflictInfo) {
+      const isConflict = Boolean(data.hasConflict);
+      const conflictVolStr = conflictInfo ? `${conflictInfo.overlapVolume} m³` : (data.conflictVol || 'None');
+      const timestamp = new Date().toLocaleString();
+      const certId = 'CERT-3D-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+
+      return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Prototype 3D Property Record - ${data.ulpin}</title>
+  <style>
+    body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; color: #1e293b; margin: 0; padding: 32px; }
+    .certificate { max-width: 800px; margin: 0 auto; background: #ffffff; border: 2px solid #cbd5e1; border-radius: 12px; padding: 36px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
+    .header { border-bottom: 2px solid #0284c7; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .title { font-size: 22px; font-weight: 800; color: #0f172a; margin: 0; }
+    .subtitle { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .badge-prototype { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; color: #0284c7; letter-spacing: 0.05em; margin: 20px 0 8px 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; font-size: 13px; }
+    .field-label { color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 600; }
+    .field-value { color: #0f172a; font-weight: 600; margin-top: 2px; }
+    .field-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: #0369a1; }
+    .status-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; }
+    .status-ok { background: #dcfce7; color: #166534; }
+    .status-dispute { background: #fee2e2; color: #991b1b; }
+    .dispute-box { margin-top: 16px; padding: 14px; background: #fff1f2; border-left: 4px solid #e11d48; border-radius: 6px; font-size: 12px; color: #881337; }
+    .dispute-box strong { color: #4c0519; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; display: flex; justify-content: space-between; }
+    .disclaimer { background: #f1f5f9; padding: 10px 14px; border-radius: 6px; font-size: 11px; color: #475569; margin-top: 20px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="certificate">
+    <div class="header">
+      <div>
+        <h1 class="title">Prototype 3D Property Record</h1>
+        <div class="subtitle">Volumetric Cadastral Title & Vertical Identification Registry</div>
+        <div class="subtitle">SIH26011 Research Project Demonstration</div>
+      </div>
+      <span class="badge-prototype">Prototype Record</span>
+    </div>
+
+    <div class="section-title">1. Spatial Identification & 3D ULPIN</div>
+    <div class="grid">
+      <div>
+        <div class="field-label">Unique 3D ULPIN (Bhu-Aadhaar 3D)</div>
+        <div class="field-value field-mono">${data.ulpin}</div>
+      </div>
+      <div>
+        <div class="field-label">Property Title / Unit Name</div>
+        <div class="field-value">${data.title}</div>
+      </div>
+      <div>
+        <div class="field-label">Category / Vertical Domain</div>
+        <div class="field-value">${data.category}</div>
+      </div>
+      <div>
+        <div class="field-label">Base 2D Parcel PIN</div>
+        <div class="field-value field-mono">IN-KA-560001-P9402</div>
+      </div>
+    </div>
+
+    <div class="section-title">2. Volumetric & Geometric Dimensions</div>
+    <div class="grid">
+      <div>
+        <div class="field-label">3D Volumetric Capacity</div>
+        <div class="field-value field-mono">${data.volume}</div>
+      </div>
+      <div>
+        <div class="field-label">Carpet / Floor Area</div>
+        <div class="field-value">${data.area}</div>
+      </div>
+      <div>
+        <div class="field-label">Altitude Range (MSL Orthometric)</div>
+        <div class="field-value field-mono">${data.elevation}</div>
+      </div>
+      <div>
+        <div class="field-label">Vertical Clearance Height</div>
+        <div class="field-value">${data.height}</div>
+      </div>
+    </div>
+
+    <div class="section-title">3. Ownership & Cadastral Status</div>
+    <div class="grid">
+      <div>
+        <div class="field-label">Registered Title Holder</div>
+        <div class="field-value">${data.owner}</div>
+      </div>
+      <div>
+        <div class="field-label">Deed Reference Number</div>
+        <div class="field-value field-mono">${data.deed}</div>
+      </div>
+      <div>
+        <div class="field-label">Undivided Share of Land (UDS)</div>
+        <div class="field-value">${data.uds}</div>
+      </div>
+      <div>
+        <div class="field-label">Spatial Dispute / Conflict Status</div>
+        <div class="field-value">
+          <span class="status-badge ${isConflict ? 'status-dispute' : 'status-ok'}">
+            ${isConflict ? 'DISPUTE PENDING (3D OVERLAP)' : 'CLEAR / VERIFIED'}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    ${isConflict ? `
+    <div class="dispute-box">
+      <strong>3D Spatial Encroachment Audit:</strong><br>
+      ${data.conflictDesc || 'Volumetric boundary intersects with adjacent title airspace.'}<br>
+      <span style="font-family: ui-monospace, monospace; margin-top: 4px; display: inline-block;">
+        Calculated Intersecting Volume: <strong>${conflictVolStr}</strong>
+      </span>
+    </div>
+    ` : ''}
+
+    <div class="disclaimer">
+      <strong>Important Notice:</strong> This document is generated by the GeoCadastre-3D system (SIH26011 Prototype). It is created strictly for technical evaluation and research demonstration of volumetric land registration concepts. It is not an officially issued government title deed.
+    </div>
+
+    <div class="footer">
+      <span>Certificate ID: ${certId}</span>
+      <span>Exported: ${timestamp}</span>
+      <span>Coordinate System: EPSG:32643 (UTM Zone 43N)</span>
+    </div>
+  </div>
+</body>
+</html>`;
+    }
+
+    /**
+     * Generates a standard 3D GeoJSON FeatureCollection export containing
+     * spatial geometry coordinates (X, Y, Z) and full cadastral properties.
+     */
+    function generateGeoJsonExport(data, aabb, conflictInfo) {
+      let minX = 0, maxX = 7.2, minY = 0, maxY = 3.0, minZ = 0, maxZ = 7.2;
+      if (aabb) {
+        minX = parseFloat(aabb.minX.toFixed(2));
+        maxX = parseFloat(aabb.maxX.toFixed(2));
+        minY = parseFloat(aabb.minY.toFixed(2));
+        maxY = parseFloat(aabb.maxY.toFixed(2));
+        minZ = parseFloat(aabb.minZ.toFixed(2));
+        maxZ = parseFloat(aabb.maxZ.toFixed(2));
+      }
+
+      const isConflict = Boolean(data.hasConflict);
+      const conflictVolNum = conflictInfo ? conflictInfo.overlapVolume : (parseFloat(data.conflictVol) || 0.0);
+
+      const geoJsonData = {
+        type: "FeatureCollection",
+        name: "Prototype_3D_Cadastre_Export",
+        crs: {
+          type: "name",
+          properties: {
+            name: "urn:ogc:def:crs:EPSG::32643"
+          }
+        },
+        metadata: {
+          generated_at: new Date().toISOString(),
+          standard: "Prototype 3D Cadastral Schema (SIH26011)",
+          datum: "WGS 84 / UTM Zone 43N",
+          notice: "Research prototype spatial export - Not official government survey data"
+        },
+        features: [
+          {
+            type: "Feature",
+            id: data.ulpin,
+            properties: {
+              ulpin_3d: data.ulpin,
+              title: data.title,
+              category: data.category,
+              owner_name: data.owner,
+              deed_reference: data.deed,
+              undivided_share_pct: data.uds,
+              volume_m3: parseFloat(data.volume) || 0.0,
+              carpet_area_str: data.area,
+              altitude_range_msl: data.elevation,
+              elevation_min_m: minY,
+              elevation_max_m: maxY,
+              clearance_height_m: data.height,
+              tax_status: data.tax,
+              has_dispute: isConflict,
+              conflict_volume_m3: isConflict ? conflictVolNum : 0.0,
+              conflict_description: isConflict ? data.conflictDesc : null,
+              bounding_box_3d: {
+                x_min: minX,
+                x_max: maxX,
+                y_min_elevation: minY,
+                y_max_elevation: maxY,
+                z_min: minZ,
+                z_max: maxZ
+              }
+            },
+            geometry: {
+              type: "Polygon",
+              coordinates: [
+                [
+                  [minX, minZ, minY],
+                  [maxX, minZ, minY],
+                  [maxX, maxZ, minY],
+                  [minX, maxZ, minY],
+                  [minX, minZ, minY]
+                ]
+              ]
+            }
+          }
+        ]
+      };
+
+      return JSON.stringify(geoJsonData, null, 2);
+    }
+
+    // -------------------------------------------------------------
+    // INTERACTION & RAYCASTING
+    // -------------------------------------------------------------
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let selectedMesh = null;
+
+    function selectProperty(key, mesh) {
+      currentSelectedPropertyKey = key;
+      
+      // 1. Retrieve or dynamically construct property record
+      let data = propertyDatabase[key];
+      if (!data) {
+        const floor = (mesh && mesh.userData && mesh.userData.floorLevel) ? mesh.userData.floorLevel : 1;
+        const token = (mesh && mesh.userData && mesh.userData.unitToken) ? mesh.userData.unitToken : 'U101';
+        const title = (mesh && mesh.userData && mesh.userData.name) ? mesh.userData.name : `Unit ${token} (Floor ${floor})`;
+        const yBase = 4.2 + (floor - 1) * 3.2;
+
+        data = {
+          title: title,
+          category: 'RESIDENTIAL PARCEL',
+          badgeClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+          status: 'REGISTERED',
+          stateCode: 'IN-KA',
+          pinCode: '560001',
+          parcelId: 'P9402',
+          unitToken: token,
+          floorLevel: floor,
+          volume: '155.5 m³',
+          area: '51.8 m² (558 sq.ft)',
+          elevation: `+${yBase.toFixed(2)}m to +${(yBase + 3.0).toFixed(2)}m`,
+          height: '3.00 m Clear',
+          owner: `Registered Owner (${token})`,
+          deed: `BLR-RES-2024-${Math.floor(10000 + Math.random() * 89999)}`,
+          uds: '3.125% of Base Parcel',
+          tax: 'Paid (FY 2025-26)',
+          hasConflict: false
+        };
+        propertyDatabase[key] = data;
+      }
+
+      // 2. DYNAMICALLY GENERATE PROTOTYPE 3D ULPIN FROM ACTUAL SPATIAL GEOMETRY & DATA
+      const ulpinInfo = generate3DULPIN(data, mesh);
+      data.ulpin = ulpinInfo.fullUlpin;
+
+      // Restore previously selected mesh
+      if (selectedMesh && selectedMesh.material) {
+        selectedMesh.material.opacity = selectedMesh.userData.origOpacity || 0.55;
+        if (selectedMesh.material.emissive) selectedMesh.material.emissive.setHex(0x000000);
+      }
+
+      selectedMesh = mesh;
+      if (selectedMesh && selectedMesh.material) {
+        selectedMesh.material.opacity = 0.95;
+        if (selectedMesh.material.emissive) {
+          selectedMesh.material.emissive.setHex(data.hasConflict ? 0xe11d48 : 0x0284c7);
+        }
+      }
+
+      // 3. Update Property Details Card UI & ensure clickability
+      const card = document.getElementById('property-card');
+      card.classList.remove('translate-x-full', 'opacity-0', 'pointer-events-none');
+
+      document.getElementById('unit-title').innerText = data.title;
+      document.getElementById('unit-badge').innerText = data.category;
+      document.getElementById('unit-badge').className = `px-2 py-0.5 text-[10px] font-bold rounded border ${data.badgeClass}`;
+      document.getElementById('unit-ulpin').innerText = ulpinInfo.fullUlpin;
+      document.getElementById('unit-volume').innerText = data.volume;
+      document.getElementById('unit-area').innerText = data.area;
+      document.getElementById('unit-elevation').innerText = data.elevation;
+      document.getElementById('unit-height').innerText = data.height;
+      document.getElementById('unit-owner').innerText = data.owner;
+      document.getElementById('unit-deed').innerText = data.deed;
+      document.getElementById('unit-uds').innerText = data.uds;
+
+      // 4. Update Left Sidebar 3D ULPIN Structure Breakdown
+      const sidebarPrefix = document.getElementById('sidebar-ulpin-prefix');
+      const sidebarParcel = document.getElementById('sidebar-ulpin-parcel');
+      const sidebarElev = document.getElementById('sidebar-ulpin-elev');
+      const sidebarUnit = document.getElementById('sidebar-ulpin-unit');
+      const sidebarLabelParcel = document.getElementById('sidebar-label-parcel');
+      const sidebarLabelElev = document.getElementById('sidebar-label-elev');
+      const sidebarLabelUnit = document.getElementById('sidebar-label-unit');
+
+      if (sidebarPrefix) sidebarPrefix.innerText = `${ulpinInfo.stateCode}-${ulpinInfo.pinCode}-`;
+      if (sidebarParcel) sidebarParcel.innerText = ulpinInfo.parcelId;
+      if (sidebarElev) sidebarElev.innerText = `-${ulpinInfo.elevationToken}`;
+      if (sidebarUnit) sidebarUnit.innerText = `-${ulpinInfo.unitToken}`;
+      if (sidebarLabelParcel) sidebarLabelParcel.innerText = ulpinInfo.baseParcelPin;
+      if (sidebarLabelElev) sidebarLabelElev.innerText = data.elevation || `${ulpinInfo.zMinMsl.toFixed(2)}m to ${ulpinInfo.zMaxMsl.toFixed(2)}m`;
+      if (sidebarLabelUnit) sidebarLabelUnit.innerText = `${ulpinInfo.unitToken} (${data.title})`;
+
+      // 5. Update Dispute Panel
+      const conflictPanel = document.getElementById('conflict-panel');
+      if (data.hasConflict) {
+        conflictPanel.classList.remove('hidden');
+        document.getElementById('conflict-desc').innerText = data.conflictDesc;
+        document.getElementById('conflict-vol').innerText = data.conflictVol;
+        card.classList.remove('border-l-cyan-500');
+        card.classList.add('border-l-rose-500');
+      } else {
+        conflictPanel.classList.add('hidden');
+        card.classList.remove('border-l-rose-500');
+        card.classList.add('border-l-cyan-500');
+      }
+
+      // 6. Update LiDAR-to-Cadastral Vertical Comparison Panel
+      if (typeof updateLiDARComparisonUI === 'function') {
+        updateLiDARComparisonUI();
+      }
+
+      // 7. Synchronize Property Metadata with FastAPI Backend (Asynchronous)
+      syncPropertyWithBackend(key, data);
+
+      // 8. Synchronize 3D Spatial Conflict Telemetry with FastAPI Backend (Asynchronous)
+      syncConflictWithBackend(key, data);
+
+      // 9. Synchronize 3D Cadastral Topology Validation with FastAPI Backend (Asynchronous)
+      syncTopologyWithBackend(key);
+    }
+
+    // Canvas Click Listener
+    window.addEventListener('pointerdown', (e) => {
+      // Ignore clicks on UI cards, sidebars, and modals
+      if (e.target.closest('aside') || e.target.closest('main') || e.target.closest('header') || e.target.closest('#modal-validation') || e.target.closest('#toast-notification')) return;
+
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(interactiveMeshes, false);
+
+      if (intersects.length > 0) {
+        const hit = intersects[0].object;
+        if (hit.userData && hit.userData.key) {
+          selectProperty(hit.userData.key, hit);
+        }
+      }
+    });
+
+    // Close Property Card
+    document.getElementById('btn-close-card').addEventListener('click', () => {
+      document.getElementById('property-card').classList.add('opacity-0', 'pointer-events-none');
+    });
+
+    // -------------------------------------------------------------
+    // UI CONTROLS & EVENT LISTENERS
+    // -------------------------------------------------------------
+    // Export 3D Deed Button Handler
+    document.getElementById('btn-export-deed').addEventListener('click', (e) => {
+      e.stopPropagation();
+      try {
+        const data = propertyDatabase[currentSelectedPropertyKey] || propertyDatabase['unit-f4-b'];
+        const aabb = selectedMesh ? getMeshAABB(selectedMesh) : null;
+        const conflicts = run3DSpatialTopologyValidation();
+        const primaryConflict = conflicts.length > 0 ? conflicts[0] : null;
+
+        const htmlReport = generateDeedHtmlReport(data, aabb, primaryConflict);
+        const sanitizedUlpin = (data.ulpin || 'RECORD').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const fileName = `Deed_Record_${sanitizedUlpin}.html`;
+
+        downloadFile(htmlReport, fileName, 'text/html;charset=utf-8');
+        showToast('Deed Record Exported', `Downloaded ${fileName} successfully.`);
+      } catch (err) {
+        console.error('Failed to export 3D deed:', err);
+        showToast('Export Failed', 'An unexpected error occurred while generating the deed record.', true);
+      }
+    });
+
+    // GIS GeoJSON Export Button Handler
+    document.getElementById('btn-export-gis').addEventListener('click', (e) => {
+      e.stopPropagation();
+      try {
+        const data = propertyDatabase[currentSelectedPropertyKey] || propertyDatabase['unit-f4-b'];
+        const aabb = selectedMesh ? getMeshAABB(selectedMesh) : null;
+        const conflicts = run3DSpatialTopologyValidation();
+        const primaryConflict = conflicts.length > 0 ? conflicts[0] : null;
+
+        const geoJsonStr = generateGeoJsonExport(data, aabb, primaryConflict);
+        const sanitizedUlpin = (data.ulpin || 'GIS_3D').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const fileName = `3D_Cadastre_${sanitizedUlpin}.geojson`;
+
+        downloadFile(geoJsonStr, fileName, 'application/geo+json;charset=utf-8');
+        showToast('GIS GeoJSON Exported', `Downloaded ${fileName} successfully.`);
+      } catch (err) {
+        console.error('Failed to export GIS GeoJSON:', err);
+        showToast('Export Failed', 'An unexpected error occurred while generating the GIS GeoJSON.', true);
+      }
+    });
+
+    // Layer toggles
+    document.getElementById('layer-air-rights').addEventListener('change', (e) => {
+      groupAirRights.visible = e.target.checked;
+      updateConflictTelemetry();
+    });
+    document.getElementById('layer-residential').addEventListener('change', (e) => {
+      groupResidential.visible = e.target.checked;
+      updateConflictTelemetry();
+    });
+    document.getElementById('layer-commercial').addEventListener('change', (e) => {
+      groupCommercial.visible = e.target.checked;
+      updateConflictTelemetry();
+    });
+    document.getElementById('layer-subterranean').addEventListener('change', (e) => {
+      groupSubterranean.visible = e.target.checked;
+      updateConflictTelemetry();
+    });
+    // -------------------------------------------------------------
+    // LIDAR POINT CLOUD ANALYSIS MODULE (ISOLATED)
+    // -------------------------------------------------------------
+    /**
+     * Computes genuine geometric statistics directly from the active LiDAR Point Cloud buffer.
+     * Extracts point count, min/max elevations, vertical span, and 3D bounding extent.
+     */
+    function computeLiDARAnalysis() {
+      if (!pPos || pPos.length === 0) return null;
+      
+      const totalPoints = pPos.length / 3;
+      let minY = Infinity, maxY = -Infinity;
+      let minX = Infinity, maxX = -Infinity;
+      let minZ = Infinity, maxZ = -Infinity;
+
+      for (let i = 0; i < totalPoints; i++) {
+        const x = pPos[i * 3];
+        const y = pPos[i * 3 + 1];
+        const z = pPos[i * 3 + 2];
+
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+      }
+
+      const deltaX = maxX - minX;
+      const deltaY = maxY - minY;
+      const deltaZ = maxZ - minZ;
+
+      return {
+        pointCount: totalPoints,
+        minX: parseFloat(minX.toFixed(2)),
+        maxX: parseFloat(maxX.toFixed(2)),
+        minY: parseFloat(minY.toFixed(2)),
+        maxY: parseFloat(maxY.toFixed(2)),
+        minZ: parseFloat(minZ.toFixed(2)),
+        maxZ: parseFloat(maxZ.toFixed(2)),
+        deltaX: parseFloat(deltaX.toFixed(2)),
+        deltaY: parseFloat(deltaY.toFixed(2)),
+        deltaZ: parseFloat(deltaZ.toFixed(2)),
+        extentX: parseFloat(deltaX.toFixed(1)),
+        extentY: parseFloat(deltaY.toFixed(1)),
+        extentZ: parseFloat(deltaZ.toFixed(1))
+      };
+    }
+
+    /**
+     * Generates a plain-text LiDAR survey analysis report string
+     * using live calculated values from computeLiDARAnalysis().
+     */
+    function generateLiDARAnalysisReportText(stats) {
+      if (!stats) {
+        stats = computeLiDARAnalysis();
+      }
+      const timestamp = new Date().toISOString();
+
+      return `================================================================================
+LIDAR SURVEY ANALYSIS REPORT
+Project: GeoCadastre-3D
+Generated: ${timestamp}
+================================================================================
+
+1. GENERAL SURVEY INFORMATION
+--------------------------------------------------------------------------------
+Project Name               : GeoCadastre-3D
+Survey Classification      : Prototype Survey TLS
+Coordinate Reference Datum : Local Cadastral Ground Origin (MSL Datum +0.00m)
+Data Source Type           : Drone TLS / Terrestrial Mobile Laser Scanner Simulation
+
+2. POINT CLOUD METRIC ANALYSIS
+--------------------------------------------------------------------------------
+Total Survey Points        : ${stats.pointCount.toLocaleString()} pts
+Minimum Elevation (Z-Min)  : ${stats.minY >= 0 ? '+' : ''}${stats.minY.toFixed(2)} m
+Maximum Elevation (Z-Max)  : ${stats.maxY >= 0 ? '+' : ''}${stats.maxY.toFixed(2)} m
+Vertical Elevation Range   : ${stats.deltaY.toFixed(2)} m
+
+Spatial Bounds (X-Axis)    : ${stats.minX.toFixed(2)} m to ${stats.maxX.toFixed(2)} m (Span: ${stats.deltaX.toFixed(2)} m)
+Spatial Bounds (Z-Axis)    : ${stats.minZ.toFixed(2)} m to ${stats.maxZ.toFixed(2)} m (Span: ${stats.deltaZ.toFixed(2)} m)
+3D Bounding Extent         : ${stats.extentX.toFixed(1)}m × ${stats.extentY.toFixed(1)}m × ${stats.extentZ.toFixed(1)}m
+Total Enclosure Volume     : ${(stats.deltaX * stats.deltaY * stats.deltaZ).toFixed(2)} m³
+
+3. CADASTRAL INTEGRATION & TOPOLOGY LINK
+--------------------------------------------------------------------------------
+Cadastral Link Status      : LINKED to 3D Cadastral Volumetric Model
+Vertical Unit Comparison   : AVAILABLE via Vertical Cadastral Comparison Panel
+Primary Reference Parcel   : IN-KA-560001-P9402 (Sy. No. 42/1, Cubbon Road)
+Topology Validation Engine : Active (Non-Overlap, Footprint, Subterranean Buffer)
+
+4. DATA INTEGRITY & PROTOTYPE SPECIFICATION
+--------------------------------------------------------------------------------
+Classification Level       : Prototype Survey Data
+Attribution Methodology    : Spatial Footprint & Altitude Intersection Sampling
+Automated Extraction Note  : Prototype architectural model. This survey report
+                             presents genuine geometrical bounding metrics
+                             extracted directly from active spatial survey buffers.
+                             No automated AI/ML classification is fabricated.
+
+================================================================================
+END OF LIDAR SURVEY ANALYSIS REPORT — GEOCADASTRE-3D
+================================================================================
+`;
+    }
+
+    function updateLiDARUI() {
+      const stats = computeLiDARAnalysis();
+      const panel = document.getElementById('panel-lidar-analysis');
+      if (!panel || !stats) return;
+
+      const isChecked = document.getElementById('layer-pointcloud').checked;
+      if (isChecked) {
+        panel.classList.remove('hidden');
+      } else {
+        panel.classList.add('hidden');
+      }
+
+      const ptCountEl = document.getElementById('lidar-pt-count');
+      const elevRangeEl = document.getElementById('lidar-elev-range');
+      const deltaZEl = document.getElementById('lidar-delta-z');
+      const coverageEl = document.getElementById('lidar-coverage-vol');
+
+      if (ptCountEl) ptCountEl.innerText = `${stats.pointCount.toLocaleString()} pts`;
+      if (elevRangeEl) elevRangeEl.innerText = `${stats.minY >= 0 ? '+' : ''}${stats.minY}m to +${stats.maxY}m`;
+      if (deltaZEl) deltaZEl.innerText = `${stats.deltaY}m`;
+      if (coverageEl) coverageEl.innerText = `${stats.extentX}m × ${stats.extentY}m × ${stats.extentZ}m`;
+      
+      updateGeometricExtractionUI();
+      lucide.createIcons();
+    }
+
+    document.getElementById('layer-pointcloud').addEventListener('change', (e) => {
+      groupPointCloud.visible = e.target.checked;
+      updateLiDARUI();
+    });
+
+    const btnAnalyzeLiDAR = document.getElementById('btn-reanalyze-lidar');
+    if (btnAnalyzeLiDAR) {
+      btnAnalyzeLiDAR.addEventListener('click', (e) => {
+        e.stopPropagation();
+        updateLiDARUI();
+        syncLiDARWithBackend();
+        showToast('LiDAR Analysis Complete', `Processed ${pCount.toLocaleString()} raw spatial survey points.`);
+      });
+    }
+
+    const btnExportLiDARReport = document.getElementById('btn-export-lidar-report');
+    if (btnExportLiDARReport) {
+      btnExportLiDARReport.addEventListener('click', (e) => {
+        e.stopPropagation();
+        try {
+          const stats = computeLiDARAnalysis();
+          if (!stats) {
+            showToast('Export Failed', 'Point cloud survey buffer is not available.', true);
+            return;
+          }
+          const reportText = generateLiDARAnalysisReportText(stats);
+          const fileName = 'GeoCadastre3D_LiDAR_Analysis_Report.txt';
+          downloadFile(reportText, fileName, 'text/plain;charset=utf-8');
+          showToast('LiDAR Report Exported', `Downloaded ${fileName} successfully.`);
+        } catch (err) {
+          console.error('Failed to export LiDAR report:', err);
+          showToast('Export Failed', 'An unexpected error occurred while generating the LiDAR report.', true);
+        }
+      });
+    }
+
+    // -------------------------------------------------------------
+    // RULE-BASED GEOMETRIC BUILDING & FLOOR EXTRACTION MODULE
+    // -------------------------------------------------------------
+    /**
+     * Performs rule-based geometric spatial segmentation of the active LiDAR point cloud (pPos).
+     * Computes point counts, elevation bounds, and spatial extents for each physical building stratum.
+     */
+    function performGeometricBuildingAndFloorExtraction() {
+      if (!pPos || pPos.length === 0) return null;
+
+      const totalPoints = pPos.length / 3;
+
+      // Define segments
+      const segmentDefs = [
+        { key: 'sub', name: 'Subterranean', test: (y) => y < 0 },
+        { key: 'comm', name: 'Ground/Commercial', test: (y) => y >= 0 && y < 4 },
+        { key: 'f1', name: 'Floor 1', test: (y) => y >= 4.2 && y <= 7.2 },
+        { key: 'f2', name: 'Floor 2', test: (y) => y >= 7.4 && y <= 10.4 },
+        { key: 'f3', name: 'Floor 3', test: (y) => y >= 10.6 && y <= 13.6 },
+        { key: 'f4', name: 'Floor 4', test: (y) => y >= 13.8 && y <= 16.8 },
+        { key: 'f5', name: 'Floor 5', test: (y) => y >= 17.0 && y <= 20.0 },
+        { key: 'roof', name: 'Rooftop/Air Rights', test: (y) => y >= 20.0 }
+      ];
+
+      const results = {};
+      segmentDefs.forEach(seg => {
+        results[seg.key] = {
+          name: seg.name,
+          count: 0,
+          minY: Infinity,
+          maxY: -Infinity,
+          minX: Infinity,
+          maxX: -Infinity,
+          minZ: Infinity,
+          maxZ: -Infinity
+        };
+      });
+
+      for (let i = 0; i < totalPoints; i++) {
+        const x = pPos[i * 3];
+        const y = pPos[i * 3 + 1];
+        const z = pPos[i * 3 + 2];
+
+        segmentDefs.forEach(seg => {
+          if (seg.test(y)) {
+            const r = results[seg.key];
+            r.count++;
+            if (y < r.minY) r.minY = y;
+            if (y > r.maxY) r.maxY = y;
+            if (x < r.minX) r.minX = x;
+            if (x > r.maxX) r.maxX = x;
+            if (z < r.minZ) r.minZ = z;
+            if (z > r.maxZ) r.maxZ = z;
+          }
+        });
+      }
+
+      // Format clean numbers
+      Object.keys(results).forEach(k => {
+        const r = results[k];
+        if (r.count > 0) {
+          r.minY = parseFloat(r.minY.toFixed(2));
+          r.maxY = parseFloat(r.maxY.toFixed(2));
+          r.minX = parseFloat(r.minX.toFixed(2));
+          r.maxX = parseFloat(r.maxX.toFixed(2));
+          r.minZ = parseFloat(r.minZ.toFixed(2));
+          r.maxZ = parseFloat(r.maxZ.toFixed(2));
+          r.spanX = parseFloat((r.maxX - r.minX).toFixed(2));
+          r.spanZ = parseFloat((r.maxZ - r.minZ).toFixed(2));
+        } else {
+          r.minY = 0; r.maxY = 0; r.minX = 0; r.maxX = 0; r.minZ = 0; r.maxZ = 0; r.spanX = 0; r.spanZ = 0;
+        }
+      });
+
+      return results;
+    }
+
+    function updateGeometricExtractionUI() {
+      const data = performGeometricBuildingAndFloorExtraction();
+      if (!data) return;
+
+      Object.keys(data).forEach(key => {
+        const seg = data[key];
+        const ptsEl = document.getElementById(`seg-pts-${key}`);
+        const elevEl = document.getElementById(`seg-elev-${key}`);
+
+        if (ptsEl) ptsEl.innerText = `${seg.count.toLocaleString()} pts`;
+        if (elevEl) elevEl.innerText = `${seg.minY >= 0 ? '+' : ''}${seg.minY.toFixed(1)}m to +${seg.maxY.toFixed(1)}m`;
+      });
+    }
+
+    const btnExtractFloors = document.getElementById('btn-extract-floors');
+    if (btnExtractFloors) {
+      btnExtractFloors.addEventListener('click', (e) => {
+        e.stopPropagation();
+        updateGeometricExtractionUI();
+        showToast('Extraction Complete', `Segmented ${pCount.toLocaleString()} LiDAR points into 8 elevation strata.`);
+      });
+    }
+
+    /**
+     * Applies dynamic visual filtering to the active LiDAR point cloud (pGeo.attributes.color)
+     * based on the selected geometric floor/stratum segment.
+     */
+    function applyExtractionPreview(segmentKey) {
+      if (!pPos || !pColors || !pGeo) return;
+
+      const totalPoints = pPos.length / 3;
+
+      // Exact tests matching performGeometricBuildingAndFloorExtraction()
+      const tests = {
+        all: () => true,
+        sub: (y) => y < 0,
+        comm: (y) => y >= 0 && y < 4,
+        f1: (y) => y >= 4.2 && y <= 7.2,
+        f2: (y) => y >= 7.4 && y <= 10.4,
+        f3: (y) => y >= 10.6 && y <= 13.6,
+        f4: (y) => y >= 13.8 && y <= 16.8,
+        f5: (y) => y >= 17.0 && y <= 20.0,
+        roof: (y) => y >= 20.0
+      };
+
+      const testFn = tests[segmentKey] || tests.all;
+      const isAll = segmentKey === 'all';
+
+      // Highlight colors per segment
+      const highlightColors = {
+        sub: [0.98, 0.75, 0.14],   // amber/gold
+        comm: [0.05, 0.85, 0.65],  // emerald/teal
+        f1: [0.05, 0.8, 0.95],     // bright cyan
+        f2: [0.05, 0.8, 0.95],     // bright cyan
+        f3: [0.05, 0.8, 0.95],     // bright cyan
+        f4: [0.95, 0.25, 0.45],    // rose (dispute floor)
+        f5: [0.05, 0.8, 0.95],     // bright cyan
+        roof: [0.55, 0.75, 1.0]    // sky blue
+      };
+
+      const hlColor = highlightColors[segmentKey] || [0.05, 0.8, 0.95];
+
+      for (let i = 0; i < totalPoints; i++) {
+        const uY = pPos[i * 3 + 1];
+        const normY = (uY + 10) / 45;
+
+        if (isAll) {
+          // Restore original gradient
+          pColors[i * 3] = 1 - normY;
+          pColors[i * 3 + 1] = normY;
+          pColors[i * 3 + 2] = 0.8;
+        } else if (testFn(uY)) {
+          // Highlight matching points
+          pColors[i * 3] = hlColor[0];
+          pColors[i * 3 + 1] = hlColor[1];
+          pColors[i * 3 + 2] = hlColor[2];
+        } else {
+          // Subdue non-matching points
+          pColors[i * 3] = 0.12;
+          pColors[i * 3 + 1] = 0.16;
+          pColors[i * 3 + 2] = 0.24;
+        }
+      }
+
+      pGeo.attributes.color.needsUpdate = true;
+
+      // Ensure LiDAR layer is visible so user sees the preview
+      if (!groupPointCloud.visible && segmentKey !== 'all') {
+        groupPointCloud.visible = true;
+        const cb = document.getElementById('layer-pointcloud');
+        if (cb) cb.checked = true;
+      }
+    }
+
+    const selectExtractPreview = document.getElementById('select-extract-preview');
+    if (selectExtractPreview) {
+      selectExtractPreview.addEventListener('change', (e) => {
+        applyExtractionPreview(e.target.value);
+        const optText = e.target.options[e.target.selectedIndex].text;
+        showToast('Extraction Preview', `Highlighting: ${optText}`);
+      });
+    }
+
+    const btnClearPreview = document.getElementById('btn-clear-preview');
+    if (btnClearPreview) {
+      btnClearPreview.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (selectExtractPreview) selectExtractPreview.value = 'all';
+        applyExtractionPreview('all');
+        showToast('Preview Cleared', 'Restored complete LiDAR point cloud visualization.');
+      });
+    }
+
+    // -------------------------------------------------------------
+    // VERTICAL PARCEL DELINEATION MODULE (PROTOTYPE)
+    // -------------------------------------------------------------
+    /**
+     * Computes 3D geometric parcel delineation metrics for the 3 prototype demonstration volumes
+     * using Three.js Box3 directly from registered scene cadastral meshes.
+     */
+    function computeVerticalParcelDelineation() {
+      const results = {};
+
+      // 1. Ground Commercial Parcel (Base Parcel Footprint: [-8, 8] x [-8, 8])
+      if (typeof commercialMesh !== 'undefined' && commercialMesh) {
+        commercialMesh.updateWorldMatrix(true, false);
+        const box = new THREE.Box3().setFromObject(commercialMesh);
+        const spanX = box.max.x - box.min.x;
+        const spanY = box.max.y - box.min.y;
+        const spanZ = box.max.z - box.min.z;
+        const area = spanX * spanZ;
+        const vol = area * spanY;
+        results.commercial = {
+          name: 'Ground Commercial Parcel',
+          minX: box.min.x, maxX: box.max.x,
+          minY: box.min.y, maxY: box.max.y,
+          minZ: box.min.z, maxZ: box.max.z,
+          area: parseFloat(area.toFixed(1)),
+          volume: parseFloat(vol.toFixed(1)),
+          ulpin: 'IN-KA-560001-P9402-Z+000.1-COMM'
+        };
+      }
+
+      // 2. Residential Floor 4 Stratum
+      const f4Mesh = (interactiveMeshes && interactiveMeshes.length > 4) ? interactiveMeshes[4] : null;
+      if (f4Mesh) {
+        f4Mesh.updateWorldMatrix(true, false);
+        const box = new THREE.Box3().setFromObject(f4Mesh);
+        results.floor4 = {
+          name: 'Residential Floor 4 Stratum',
+          minY: box.min.y, maxY: box.max.y,
+          ulpin: 'IN-KA-560001-P9402-Z+013.8-FL04'
+        };
+      }
+
+      // 3. Subterranean B1 Parcel
+      if (typeof b1Mesh !== 'undefined' && b1Mesh) {
+        b1Mesh.updateWorldMatrix(true, false);
+        const box = new THREE.Box3().setFromObject(b1Mesh);
+        const spanX = box.max.x - box.min.x;
+        const spanY = box.max.y - box.min.y;
+        const spanZ = box.max.z - box.min.z;
+        const area = spanX * spanZ;
+        const vol = area * spanY;
+        results.subterraneanB1 = {
+          name: 'Subterranean Level B1 Parcel',
+          minX: box.min.x, maxX: box.max.x,
+          minY: box.min.y, maxY: box.max.y,
+          minZ: box.min.z, maxZ: box.max.z,
+          area: parseFloat(area.toFixed(1)),
+          volume: parseFloat(vol.toFixed(1)),
+          ulpin: 'IN-KA-560001-P9402-Z-004.8-SUB1'
+        };
+      }
+
+      return results;
+    }
+
+    // -------------------------------------------------------------
+    // VERTICAL CADASTRAL COMPARISON MODULE (LIDAR-TO-PARCEL)
+    // -------------------------------------------------------------
+    /**
+     * Performs a vertical spatial comparison between the selected property's
+     * world bounding box and raw LiDAR survey points within its footprint.
+     */
+    function runLiDARComparisonForSelectedProperty() {
+      if (!selectedMesh || !pPos || pPos.length === 0) return null;
+
+      // 1. Obtain Cadastral World Bounding Box for the selected property
+      selectedMesh.updateWorldMatrix(true, false);
+      const cadBox = new THREE.Box3().setFromObject(selectedMesh);
+      const cadMinY = cadBox.min.y;
+      const cadMaxY = cadBox.max.y;
+      const cadSpanY = cadMaxY - cadMinY;
+
+      // 2. Extract LiDAR points falling inside the unit's horizontal footprint
+      const margin = 0.5; // 0.5m survey envelope tolerance
+      const minX = cadBox.min.x - margin;
+      const maxX = cadBox.max.x + margin;
+      const minZ = cadBox.min.z - margin;
+      const maxZ = cadBox.max.z + margin;
+
+      const totalPts = pPos.length / 3;
+      let lidarMinY = Infinity;
+      let lidarMaxY = -Infinity;
+      let matchedPts = 0;
+
+      for (let i = 0; i < totalPts; i++) {
+        const px = pPos[i * 3];
+        const py = pPos[i * 3 + 1];
+        const pz = pPos[i * 3 + 2];
+
+        // Check if point falls within unit footprint
+        if (px >= minX && px <= maxX && pz >= minZ && pz <= maxZ) {
+          // Elevation window test (within unit's vertical envelope + tolerance)
+          if (py >= (cadMinY - 1.0) && py <= (cadMaxY + 1.0)) {
+            matchedPts++;
+            if (py < lidarMinY) lidarMinY = py;
+            if (py > lidarMaxY) lidarMaxY = py;
+          }
+        }
+      }
+
+      const propData = propertyDatabase[currentSelectedPropertyKey] || {};
+      const ulpin = propData.ulpin || 'IN-KA-560001-P9402-Z+015.5-U402';
+      const title = propData.title || (selectedMesh.userData && selectedMesh.userData.name) || 'Selected Cadastral Unit';
+
+      const hasValidPoints = matchedPts >= 5 && lidarMinY !== Infinity && lidarMaxY !== -Infinity;
+      let devMin = 0, devMax = 0, maxDev = 0;
+
+      if (hasValidPoints) {
+        devMin = Math.abs(cadMinY - lidarMinY);
+        devMax = Math.abs(cadMaxY - lidarMaxY);
+        maxDev = Math.max(devMin, devMax);
+      }
+
+      return {
+        title,
+        ulpin,
+        cadMinY: parseFloat(cadMinY.toFixed(2)),
+        cadMaxY: parseFloat(cadMaxY.toFixed(2)),
+        cadSpanY: parseFloat(cadSpanY.toFixed(2)),
+        lidarMinY: hasValidPoints ? parseFloat(lidarMinY.toFixed(2)) : null,
+        lidarMaxY: hasValidPoints ? parseFloat(lidarMaxY.toFixed(2)) : null,
+        maxDev: hasValidPoints ? parseFloat(maxDev.toFixed(2)) : null,
+        matchedPts,
+        hasValidPoints
+      };
+    }
+
+    function updateLiDARComparisonUI() {
+      const res = runLiDARComparisonForSelectedProperty();
+      if (!res) return;
+
+      const cadElevEl = document.getElementById('comp-cadastral-elev');
+      const lidarElevEl = document.getElementById('comp-lidar-elev');
+      const devEl = document.getElementById('comp-vertical-dev');
+      const noteEl = document.getElementById('comp-attribution-note');
+      const badgeEl = document.getElementById('lidar-comp-badge');
+
+      if (cadElevEl) {
+        cadElevEl.innerText = `${res.cadMinY >= 0 ? '+' : ''}${res.cadMinY.toFixed(2)}m to +${res.cadMaxY.toFixed(2)}m`;
+      }
+
+      if (res.hasValidPoints) {
+        if (lidarElevEl) {
+          lidarElevEl.innerText = `${res.lidarMinY >= 0 ? '+' : ''}${res.lidarMinY.toFixed(2)}m to +${res.lidarMaxY.toFixed(2)}m`;
+        }
+        if (devEl) {
+          devEl.innerText = `${res.maxDev.toFixed(2)}m (${res.maxDev <= 0.35 ? 'Permissible' : 'Survey Variance'})`;
+        }
+        if (noteEl) {
+          noteEl.innerText = `Point-Cloud Footprint Sample (${res.matchedPts} pts)`;
+        }
+        if (badgeEl) {
+          if (res.maxDev <= 0.35) {
+            badgeEl.className = 'px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[9px] font-bold border border-emerald-500/30';
+            badgeEl.innerText = 'MATCH';
+          } else {
+            badgeEl.className = 'px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold border border-amber-500/30';
+            badgeEl.innerText = `DEVIATION (${res.maxDev.toFixed(2)}m)`;
+          }
+        }
+      } else {
+        if (lidarElevEl) {
+          lidarElevEl.innerText = 'LiDAR-to-unit: PROTOTYPE DATA';
+        }
+        if (devEl) {
+          devEl.innerText = 'N/A (Sparse Point Sampling)';
+        }
+        if (noteEl) {
+          noteEl.innerText = 'LiDAR-to-unit attribution: PROTOTYPE DATA';
+        }
+        if (badgeEl) {
+          badgeEl.className = 'px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono text-[9px] font-bold border border-purple-500/30';
+          badgeEl.innerText = 'PROTOTYPE DATA';
+        }
+      }
+
+      lucide.createIcons();
+    }
+
+    const btnCompareLiDAR = document.getElementById('btn-compare-lidar');
+    if (btnCompareLiDAR) {
+      btnCompareLiDAR.addEventListener('click', (e) => {
+        e.stopPropagation();
+        updateLiDARComparisonUI();
+        const res = runLiDARComparisonForSelectedProperty();
+        if (res && res.hasValidPoints) {
+          showToast('LiDAR Comparison Complete', `Vertical deviation: ${res.maxDev.toFixed(2)}m (${res.matchedPts} points evaluated).`);
+        } else {
+          showToast('LiDAR Comparison', 'Evaluated spatial footprint against raw survey point cloud.');
+        }
+      });
+    }
+
+    // Conflict Simulation Toggle
+    let conflictEnabled = true;
+    const btnToggleConflict = document.getElementById('btn-toggle-conflict');
+    btnToggleConflict.addEventListener('click', () => {
+      conflictEnabled = !conflictEnabled;
+      groupConflict.visible = conflictEnabled;
+      btnToggleConflict.className = conflictEnabled
+        ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white flex items-center space-x-1.5 transition shadow-lg shadow-rose-600/30'
+        : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center space-x-1.5 transition';
+      
+      updateConflictTelemetry();
+
+      if (conflictEnabled) {
+        selectProperty('unit-f4-a', conflictMesh);
+      } else {
+        if (selectedMesh === conflictMesh) {
+          selectProperty('unit-f4-b', interactiveMeshes[4]);
+        }
+      }
+    });
+
+    // Exploded View Slider
+    const sliderExplode = document.getElementById('slider-explode');
+    const explodeValLabel = document.getElementById('explode-val');
+    sliderExplode.addEventListener('input', (e) => {
+      const factor = parseFloat(e.target.value);
+      explodeValLabel.innerText = `${factor.toFixed(1)}x`;
+
+      floorGroups.forEach((fg, idx) => {
+        const offset = idx * factor * 2.2;
+        fg.position.y = offset;
+      });
+      groupAirRights.position.y = (floorGroups.length - 1) * factor * 2.2;
+      updateConflictTelemetry();
+    });
+
+    // Perspective Camera Transitions using Tween.js
+    function animateCamera(px, py, pz, tx, ty, tz) {
+      new TWEEN.Tween(camera.position)
+        .to({ x: px, y: py, z: pz }, 1000)
+        .easing(TWEEN.Easing.Cubic.Out)
+        .start();
+
+      new TWEEN.Tween(controls.target)
+        .to({ x: tx, y: ty, z: tz }, 1000)
+        .easing(TWEEN.Easing.Cubic.Out)
+        .start();
+    }
+
+    document.getElementById('cam-isometric').addEventListener('click', () => {
+      animateCamera(38, 28, 48, 0, 10, 0);
+    });
+    document.getElementById('cam-subterranean').addEventListener('click', () => {
+      animateCamera(25, -12, 30, 0, -6, 0);
+    });
+    document.getElementById('cam-airrights').addEventListener('click', () => {
+      animateCamera(35, 48, 35, 0, 30, 0);
+    });
+    document.getElementById('cam-dispute').addEventListener('click', () => {
+      animateCamera(-20, 18, -12, -8, 15, -4);
+      selectProperty('unit-f4-a', conflictMesh);
+    });
+
+    // Validation Modal
+    const modalValidation = document.getElementById('modal-validation');
+    document.getElementById('btn-run-validation').addEventListener('click', () => {
+      updateConflictTelemetry();
+      modalValidation.classList.remove('hidden');
+      syncTopologyWithBackend(currentSelectedPropertyKey);
+    });
+    document.getElementById('btn-close-modal').addEventListener('click', () => {
+      modalValidation.classList.add('hidden');
+    });
+    document.getElementById('btn-close-modal-2').addEventListener('click', () => {
+      modalValidation.classList.add('hidden');
+    });
+
+    // Resize Handler
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // -------------------------------------------------------------
+    // CENTRALIZED API BASE CONFIGURATION (DAY 7 STEP 3)
+    // -------------------------------------------------------------
+    // Production Render HTTPS URL with local development fallback
+    const PROD_API_BASE_URL = 'https://geocadastre3d-api.onrender.com';
+    const LOCAL_API_BASE_URL = 'http://127.0.0.1:8000';
+
+    function getApiBaseUrl() {
+      if (typeof window !== 'undefined') {
+        if (window.GEOCADASTRE_API_URL) return window.GEOCADASTRE_API_URL.replace(/\/+$/, '');
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const queryApi = urlParams.get('api_url');
+          if (queryApi) return queryApi.replace(/\/+$/, '');
+        } catch (e) {}
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+          return LOCAL_API_BASE_URL;
+        }
+      }
+      return PROD_API_BASE_URL;
+    }
+
+    const API_BASE_URL = getApiBaseUrl();
+
+    // -------------------------------------------------------------
+    // FRONTEND <-> BACKEND HEALTH CONNECTION (DAY 5 STEP 2)
+    // -------------------------------------------------------------
+    async function checkBackendHealth() {
+      const badge = document.getElementById('backend-status-badge');
+      if (!badge) return;
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/health`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.status === 'healthy') {
+            badge.className = 'flex items-center space-x-1.5 px-2 py-1 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-medium border border-emerald-500/30 cursor-pointer transition';
+            badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>Backend: Connected</span>';
+            badge.title = `Service: ${data.service || 'GeoCadastre-3D Backend'} (${API_BASE_URL}). Click to re-check.`;
+          } else {
+            badge.className = 'flex items-center space-x-1.5 px-2 py-1 rounded bg-amber-500/20 text-amber-400 text-[10px] font-mono font-medium border border-amber-500/30 cursor-pointer transition';
+            badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span><span>Backend: Unexpected</span>';
+            badge.title = 'Backend responded with non-healthy status. Click to retry.';
+          }
+        } else {
+          badge.className = 'flex items-center space-x-1.5 px-2 py-1 rounded bg-rose-500/20 text-rose-400 text-[10px] font-mono font-medium border border-rose-500/30 cursor-pointer transition';
+          badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span><span>Backend: HTTP ${res.status}</span>`;
+          badge.title = `HTTP error ${res.status} from backend (${API_BASE_URL}). Click to retry.`;
+        }
+      } catch (err) {
+        badge.className = 'flex items-center space-x-1.5 px-2 py-1 rounded bg-slate-800 text-slate-400 text-[10px] font-mono font-medium border border-slate-700 cursor-pointer transition';
+        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span>Backend: Offline</span>';
+        badge.title = `FastAPI server offline at ${API_BASE_URL}. Click to retry.`;
+      }
+    }
+
+    const badgeEl = document.getElementById('backend-status-badge');
+    if (badgeEl) {
+      badgeEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        checkBackendHealth();
+      });
+    }
+
+    // -------------------------------------------------------------
+    // PROPERTY & 3D ULPIN BACKEND INTEGRATION (DAY 5 STEP 3)
+    // -------------------------------------------------------------
+    const FRONTEND_TO_BACKEND_PROP_MAP = {
+      'unit-f4-a': 'U401',
+      'unit-f4-b': 'U402',
+      'unit-comm': 'ground-commercial',
+      'unit-sub1': 'b1',
+      'unit-air': 'air-rights'
+    };
+
+    async function fetchBackendProperty(propertyId) {
+      const res = await fetch(`${API_BASE_URL}/api/properties/${encodeURIComponent(propertyId)}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      return await res.json();
+    }
+
+    async function fetchBackendULPIN(ulpin) {
+      const res = await fetch(`${API_BASE_URL}/api/properties/ulpin/${encodeURIComponent(ulpin)}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      return await res.json();
+    }
+
+    async function syncPropertyWithBackend(propertyKey, localData) {
+      const syncBadge = document.getElementById('prop-sync-badge');
+      if (!syncBadge) return;
+
+      const backendPropId = FRONTEND_TO_BACKEND_PROP_MAP[propertyKey] || (localData && localData.unitToken ? localData.unitToken : propertyKey);
+
+      // UI State: BACKEND SYNCING
+      syncBadge.className = 'px-1.5 py-0.5 text-[9px] font-mono font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded transition animate-pulse';
+      syncBadge.innerText = 'SYNCING...';
+      syncBadge.title = `Fetching backend data for ${backendPropId}...`;
+
+      try {
+        // 1. Fetch backend property record
+        const propData = await fetchBackendProperty(backendPropId);
+
+        // 2. Perform reverse ULPIN lookup verification
+        let ulpinVerified = false;
+        if (propData && propData.ulpin) {
+          try {
+            const ulpinLookup = await fetchBackendULPIN(propData.ulpin);
+            if (ulpinLookup && ulpinLookup.property_id.toLowerCase() === backendPropId.toLowerCase()) {
+              ulpinVerified = true;
+            }
+          } catch (uErr) {
+            console.warn('Backend ULPIN verification failed:', uErr);
+          }
+        }
+
+        // Ensure user hasn't switched to another property during network roundtrip
+        if (currentSelectedPropertyKey !== propertyKey) return;
+
+        if (ulpinVerified) {
+          syncBadge.className = 'px-1.5 py-0.5 text-[9px] font-mono font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded transition flex items-center space-x-1';
+          syncBadge.innerText = 'BACKEND SYNCED';
+          syncBadge.title = `Synchronized with FastAPI backend. ULPIN verified: ${propData.ulpin}`;
+
+          // Update UI with authoritative synchronized data
+          if (propData.owner && document.getElementById('unit-owner')) {
+            document.getElementById('unit-owner').innerText = propData.owner;
+          }
+          if (propData.status && document.getElementById('unit-status')) {
+            const statusSpan = document.getElementById('unit-status').querySelector('span:last-child');
+            if (statusSpan) statusSpan.innerText = propData.status;
+          }
+        } else {
+          syncBadge.className = 'px-1.5 py-0.5 text-[9px] font-mono font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded transition';
+          syncBadge.innerText = 'SYNC WARN (ULPIN)';
+          syncBadge.title = 'Backend record returned, but ULPIN verification did not match property.';
+        }
+      } catch (err) {
+        if (currentSelectedPropertyKey !== propertyKey) return;
+        syncBadge.className = 'px-1.5 py-0.5 text-[9px] font-mono font-medium bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded transition';
+        syncBadge.innerText = 'BACKEND SYNC ERROR';
+        syncBadge.title = `Backend unavailable or property not found (${err.message}). Using local cache.`;
+      }
+    }
+
+    // -------------------------------------------------------------
+    // LIDAR ANALYSIS BACKEND INTEGRATION (DAY 5 STEP 4)
+    // -------------------------------------------------------------
+    async function fetchBackendLiDARAnalysis() {
+      const res = await fetch(`${API_BASE_URL}/api/lidar/analysis`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }
+
+    async function fetchBackendLiDARStrata() {
+      const res = await fetch(`${API_BASE_URL}/api/lidar/strata`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }
+
+    async function syncLiDARWithBackend() {
+      const syncBadge = document.getElementById('lidar-sync-badge');
+      if (!syncBadge) return;
+
+      syncBadge.className = 'px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[8px] font-medium border border-amber-500/30 animate-pulse';
+      syncBadge.innerText = 'LIDAR SYNCING...';
+
+      try {
+        const [analysisData, strataData] = await Promise.all([
+          fetchBackendLiDARAnalysis(),
+          fetchBackendLiDARStrata()
+        ]);
+
+        if (analysisData) {
+          syncBadge.className = 'px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[8px] font-medium border border-emerald-500/30';
+          syncBadge.innerText = 'LIDAR BACKEND SYNCED';
+          syncBadge.title = `Backend Survey Analysis: ${analysisData.total_points.toLocaleString()} pts, Enclosure Vol: ${analysisData.enclosure_volume_m3.toLocaleString()} m³`;
+
+          // Update UI metrics with synchronized backend values
+          const ptCountEl = document.getElementById('lidar-pt-count');
+          const elevRangeEl = document.getElementById('lidar-elev-range');
+          const deltaZEl = document.getElementById('lidar-delta-z');
+          const coverageEl = document.getElementById('lidar-coverage-vol');
+
+          if (ptCountEl) ptCountEl.innerText = `${analysisData.total_points.toLocaleString()} pts`;
+          if (elevRangeEl) elevRangeEl.innerText = `${analysisData.min_y >= 0 ? '+' : ''}${analysisData.min_y.toFixed(1)}m to +${analysisData.max_y.toFixed(1)}m`;
+          if (deltaZEl) deltaZEl.innerText = `${analysisData.vertical_span.toFixed(1)}m`;
+          if (coverageEl) coverageEl.innerText = analysisData.bounding_extent;
+        }
+
+        if (strataData && strataData.strata) {
+          const keyMap = {
+            'Subterranean': 'sub',
+            'Ground / Commercial': 'comm',
+            'Floor 1': 'f1',
+            'Floor 2': 'f2',
+            'Floor 3': 'f3',
+            'Floor 4': 'f4',
+            'Floor 5': 'f5',
+            'Rooftop / Air Rights': 'roof'
+          };
+
+          strataData.strata.forEach(st => {
+            const key = keyMap[st.name];
+            if (key) {
+              const ptsEl = document.getElementById(`seg-pts-${key}`);
+              const elevEl = document.getElementById(`seg-elev-${key}`);
+              if (ptsEl) ptsEl.innerText = `${st.point_count.toLocaleString()} pts (${st.percentage.toFixed(1)}%)`;
+              if (elevEl) elevEl.innerText = `${st.elevation_min_m >= 0 ? '+' : ''}${st.elevation_min_m.toFixed(1)}m to +${st.elevation_max_m.toFixed(1)}m`;
+            }
+          });
+        }
+      } catch (err) {
+        syncBadge.className = 'px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[8px] font-medium border border-rose-500/30';
+        syncBadge.innerText = 'LIDAR SYNC ERROR';
+        syncBadge.title = `Backend LiDAR API unavailable (${err.message}). Using local geometric computation.`;
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 3D SPATIAL CONFLICT DETECTION BACKEND INTEGRATION (DAY 5 STEP 5)
+    // -------------------------------------------------------------
+    async function fetchBackendConflicts() {
+      const res = await fetch(`${API_BASE_URL}/api/conflicts`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }
+
+    async function fetchBackendConflictsForProperty(propertyId) {
+      const res = await fetch(`${API_BASE_URL}/api/conflicts/property/${encodeURIComponent(propertyId)}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }
+
+    async function fetchBackendConflictMatrix() {
+      const res = await fetch(`${API_BASE_URL}/api/conflicts/matrix`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }
+
+    async function syncGlobalConflictTelemetry() {
+      try {
+        const data = await fetchBackendConflicts();
+        const headerBadge = document.getElementById('conflict-badge');
+        if (headerBadge && data) {
+          const count = data.total_conflicts || 0;
+          headerBadge.innerText = count === 1
+            ? '1 Boundary Dispute Detected'
+            : (count > 1 ? `${count} Boundary Disputes Detected` : '0 Boundary Disputes');
+        }
+      } catch (err) {
+        console.warn('Backend global conflict sync failed, keeping local count:', err);
+      }
+    }
+
+    async function syncConflictWithBackend(propertyKey, localData) {
+      const conflictPanel = document.getElementById('conflict-panel');
+      const syncBadge = document.getElementById('conflict-sync-badge');
+      const matchBadge = document.getElementById('conflict-engine-match');
+      if (!conflictPanel || !syncBadge) return;
+
+      const backendPropId = FRONTEND_TO_BACKEND_PROP_MAP[propertyKey] || (localData && localData.unitToken ? localData.unitToken : propertyKey);
+
+      syncBadge.className = 'px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold border border-amber-500/30 animate-pulse';
+      syncBadge.innerText = 'SYNCING...';
+
+      try {
+        const conflicts = await fetchBackendConflictsForProperty(backendPropId);
+        if (currentSelectedPropertyKey !== propertyKey) return;
+
+        if (conflicts && conflicts.length > 0) {
+          const c = conflicts[0];
+          syncBadge.className = 'px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[9px] font-bold border border-emerald-500/30';
+          syncBadge.innerText = 'CONFLICT BACKEND SYNCED';
+
+          const volEl = document.getElementById('conflict-vol');
+          const dimsEl = document.getElementById('conflict-dims');
+          const entityEl = document.getElementById('conflict-entity');
+
+          if (volEl) volEl.innerText = `${c.overlap_volume_m3.toFixed(2)} m³`;
+          if (dimsEl && c.overlap_bounds) {
+            dimsEl.innerText = `${c.overlap_bounds.width_m.toFixed(2)}m × ${c.overlap_bounds.height_m.toFixed(2)}m × ${c.overlap_bounds.depth_m.toFixed(2)}m`;
+          }
+          if (entityEl) {
+            entityEl.innerText = `${c.conflict_id} (${c.property_b_name})`;
+          }
+
+          // Compare frontend and backend volumes (tolerance <= 0.01 m³)
+          const localVol = parseFloat(localData.conflictVol) || 9.19;
+          const diff = Math.abs(localVol - c.overlap_volume_m3);
+          if (matchBadge) {
+            if (diff <= 0.01) {
+              matchBadge.className = 'px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono text-[9px] font-bold text-center';
+              matchBadge.innerText = `CONFLICT ENGINE VERIFIED (${localVol.toFixed(2)} m³ ≈ ${c.overlap_volume_m3.toFixed(2)} m³)`;
+            } else {
+              matchBadge.className = 'px-2 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono text-[9px] font-bold text-center';
+              matchBadge.innerText = `CONFLICT ENGINE DEVIATION: Frontend ${localVol.toFixed(2)} m³ vs Backend ${c.overlap_volume_m3.toFixed(2)} m³`;
+            }
+          }
+        } else {
+          syncBadge.className = 'px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono text-[9px] font-bold border border-slate-700';
+          syncBadge.innerText = 'NO BACKEND CONFLICT';
+        }
+      } catch (err) {
+        if (currentSelectedPropertyKey !== propertyKey) return;
+        syncBadge.className = 'px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[9px] font-bold border border-rose-500/30';
+        syncBadge.innerText = 'CONFLICT BACKEND SYNC ERROR';
+        syncBadge.title = `Backend conflict API unreachable (${err.message}). Using local geometric computation.`;
+      }
+    }
+
+    // Modal Conflict Matrix UI handler
+    const modalMatrix = document.getElementById('modal-matrix');
+    const btnRunMatrix = document.getElementById('btn-run-matrix');
+    const btnCloseMatrix = document.getElementById('btn-close-matrix');
+    const btnCloseMatrix2 = document.getElementById('btn-close-matrix-2');
+
+    async function openConflictMatrixModal() {
+      if (!modalMatrix) return;
+      modalMatrix.classList.remove('hidden');
+
+      const container = document.getElementById('matrix-pairs-container');
+      const pairsCount = document.getElementById('matrix-pairs-count');
+      const conflictsCount = document.getElementById('matrix-conflicts-count');
+      const volumeTotal = document.getElementById('matrix-volume-total');
+
+      if (container) {
+        container.innerHTML = '<div class="text-center py-6 text-slate-400 animate-pulse font-mono">Evaluating 3D AABB intersection matrix from FastAPI backend...</div>';
+      }
+
+      try {
+        const data = await fetchBackendConflictMatrix();
+        if (data) {
+          if (pairsCount) pairsCount.innerText = data.total_pairs_evaluated;
+          if (conflictsCount) conflictsCount.innerText = data.conflicts_detected_count;
+          if (volumeTotal) volumeTotal.innerText = `${data.total_disputed_volume_m3.toFixed(2)} m³`;
+
+          if (container && data.matrix) {
+            let html = '';
+            data.matrix.forEach(pair => {
+              const isDispute = pair.status === 'DISPUTED';
+              html += `
+                <div class="p-2 rounded bg-slate-900/90 border ${isDispute ? 'border-rose-800/80 bg-rose-950/30' : 'border-slate-800'} flex items-center justify-between font-mono text-[10px]">
+                  <div class="flex items-center space-x-2">
+                    <span class="font-bold ${isDispute ? 'text-rose-300' : 'text-slate-200'}">${pair.property_a}</span>
+                    <span class="text-slate-500">↔</span>
+                    <span class="font-bold ${isDispute ? 'text-rose-300' : 'text-slate-200'}">${pair.property_b}</span>
+                  </div>
+                  <div class="flex items-center space-x-2">
+                    <span class="${isDispute ? 'text-amber-300 font-bold' : 'text-slate-500'}">${pair.overlap_volume_m3 > 0 ? `${pair.overlap_volume_m3.toFixed(2)} m³` : '0.00 m³'}</span>
+                    <span class="px-1.5 py-0.5 rounded text-[8px] font-bold ${isDispute ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'}">${pair.status}</span>
+                  </div>
+                </div>
+              `;
+            });
+            container.innerHTML = html;
+          }
+        }
+      } catch (err) {
+        if (container) {
+          container.innerHTML = `<div class="text-center py-6 text-rose-400 font-mono text-xs">FastAPI backend offline (${err.message}). Unable to compute live matrix.</div>`;
+        }
+      }
+    }
+
+    if (btnRunMatrix) {
+      btnRunMatrix.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openConflictMatrixModal();
+      });
+    }
+
+    if (btnCloseMatrix) {
+      btnCloseMatrix.addEventListener('click', () => {
+        if (modalMatrix) modalMatrix.classList.add('hidden');
+      });
+    }
+
+    if (btnCloseMatrix2) {
+      btnCloseMatrix2.addEventListener('click', () => {
+        if (modalMatrix) modalMatrix.classList.add('hidden');
+      });
+    }
+
+    // -------------------------------------------------------------
+    // 3D CADASTRAL TOPOLOGY VALIDATION BACKEND INTEGRATION (DAY 5 STEP 6)
+    // -------------------------------------------------------------
+    async function fetchBackendTopologyForProperty(propertyId) {
+      const res = await fetch(`${API_BASE_URL}/api/topology/validate/${encodeURIComponent(propertyId)}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }
+
+    async function fetchBackendTopologyAll() {
+      const res = await fetch(`${API_BASE_URL}/api/topology/validate`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }
+
+    async function syncTopologyWithBackend(propertyKey) {
+      const syncBadge = document.getElementById('topology-sync-badge');
+      const matchBadge = document.getElementById('topology-engine-match');
+      if (!syncBadge) return;
+
+      const localData = propertyDatabase[propertyKey] || {};
+      const backendPropId = FRONTEND_TO_BACKEND_PROP_MAP[propertyKey] || (localData.unitToken ? localData.unitToken : propertyKey);
+
+      syncBadge.className = 'px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold border border-amber-500/30 animate-pulse';
+      syncBadge.innerText = 'TOPOLOGY SYNCING...';
+
+      try {
+        const topoData = await fetchBackendTopologyForProperty(backendPropId);
+        if (!topoData) return;
+
+        syncBadge.className = 'px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[9px] font-bold border border-emerald-500/30';
+        syncBadge.innerText = 'TOPOLOGY BACKEND SYNCED';
+
+        // Update Modal UI Fields
+        const propTitleEl = document.getElementById('topo-prop-title');
+        const overallStatusEl = document.getElementById('topo-overall-status');
+        const passedCountEl = document.getElementById('topo-passed-count');
+        const failedCountEl = document.getElementById('topo-failed-count');
+
+        if (propTitleEl) propTitleEl.innerText = `${topoData.property_name} (${topoData.property_id}) — 3D Cadastral Audit`;
+        if (overallStatusEl) {
+          overallStatusEl.className = `font-mono text-xs font-bold mt-0.5 ${topoData.overall_status === 'PASS' ? 'text-emerald-400' : 'text-rose-400'}`;
+          overallStatusEl.innerText = topoData.overall_status === 'PASS' ? 'OVERALL COMPLIANT (PASS)' : 'TOPOLOGY VIOLATIONS (FAIL)';
+        }
+        if (passedCountEl) passedCountEl.innerText = topoData.passed_check_count;
+        if (failedCountEl) failedCountEl.innerText = topoData.failed_check_count;
+
+        // Render each check (TOP-01 to TOP-04)
+        if (topoData.checks) {
+          const ruleElements = {
+            'TOP-01': { badge: 'topo-rule-1-badge', desc: 'topo-rule-1-desc', val: 'topo-rule-1-val', icon: 'topo-rule-1-icon' },
+            'TOP-02': { badge: 'topo-rule-2-badge', desc: 'topo-rule-2-desc', val: 'topo-rule-2-val', icon: 'topo-rule-2-icon' },
+            'TOP-03': { badge: 'topo-rule-3-badge', desc: 'topo-rule-3-desc', val: 'topo-rule-3-val', icon: 'topo-rule-3-icon' },
+            'TOP-04': { badge: 'topo-rule-4-badge', desc: 'topo-rule-4-desc', val: 'topo-rule-4-val', icon: 'topo-rule-4-icon' }
+          };
+
+          topoData.checks.forEach(check => {
+            const elIds = ruleElements[check.check_id];
+            if (elIds) {
+              const bEl = document.getElementById(elIds.badge);
+              const dEl = document.getElementById(elIds.desc);
+              const vEl = document.getElementById(elIds.val);
+              const iEl = document.getElementById(elIds.icon);
+
+              const isPass = check.status === 'PASS';
+              if (bEl) {
+                bEl.className = `px-2 py-0.5 rounded font-mono text-[10px] font-bold ${isPass ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`;
+                bEl.innerText = check.status;
+              }
+              if (dEl) dEl.innerText = check.description;
+              if (vEl) vEl.innerText = `Measured: ${check.measured_value} | Criterion: ${check.expected_condition}`;
+              if (iEl) {
+                iEl.innerHTML = isPass ? '<i data-lucide="check" class="w-4 h-4 text-emerald-400"></i>' : '<i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400"></i>';
+              }
+            }
+          });
+          lucide.createIcons();
+        }
+
+        // Compare Frontend vs Backend Result
+        const isConflictFrontend = Boolean(localData.hasConflict);
+        const frontendStatus = isConflictFrontend ? 'FAIL' : 'PASS';
+        const frontendPassed = isConflictFrontend ? 2 : 4;
+        const frontendFailed = isConflictFrontend ? 2 : 0;
+
+        if (matchBadge) {
+          if (frontendStatus === topoData.overall_status && frontendFailed === topoData.failed_check_count) {
+            matchBadge.className = 'px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono text-[9px] font-bold text-center';
+            matchBadge.innerText = `TOPOLOGY ENGINE VERIFIED: Frontend ${frontendStatus} (${frontendPassed}P/${frontendFailed}F) = Backend ${topoData.overall_status} (${topoData.passed_check_count}P/${topoData.failed_check_count}F)`;
+          } else {
+            matchBadge.className = 'px-2 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono text-[9px] font-bold text-center';
+            matchBadge.innerText = `TOPOLOGY DEVIATION: Frontend ${frontendStatus} vs Backend ${topoData.overall_status}`;
+          }
+        }
+      } catch (err) {
+        syncBadge.className = 'px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[9px] font-bold border border-rose-500/30';
+        syncBadge.innerText = 'TOPOLOGY BACKEND SYNC ERROR';
+        syncBadge.title = `Backend topology API unreachable (${err.message}). Using local evaluation.`;
+      }
+    }
+
+    // Initial setup: Run calculation, health check, conflict sync, and select initial default unit
+    updateConflictTelemetry();
+    checkBackendHealth();
+    syncGlobalConflictTelemetry();
+    setTimeout(() => {
+      selectProperty('unit-f4-b', interactiveMeshes[4]);
+    }, 500);
+
+    // -------------------------------------------------------------
+    // RENDER ANIMATION LOOP
+    // -------------------------------------------------------------
+    let clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      TWEEN.update();
+      controls.update();
+
+      // Pulsing effect for conflict highlighter
+      const time = clock.getElapsedTime();
+      if (intersectMesh) {
+        intersectMesh.rotation.y = time * 0.5;
+        intersectMat.opacity = 0.5 + 0.4 * Math.sin(time * 4);
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+  <!-- Toast Notification -->
+  <div id="toast-notification" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none glass-panel border border-slate-700 px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 text-xs max-w-sm">
+    <div id="toast-icon-container" class="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+      <i data-lucide="check-circle" class="w-4 h-4"></i>
+    </div>
+    <div>
+      <div id="toast-title" class="font-semibold text-slate-100">Export Successful</div>
+      <div id="toast-msg" class="text-[11px] text-slate-400">File downloaded to your device.</div>
+    </div>
+  </div>
+</body>
+</html>

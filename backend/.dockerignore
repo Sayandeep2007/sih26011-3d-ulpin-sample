@@ -1,0 +1,26 @@
+# Python cache and byte-code
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Virtual Environments
+venv/
+env/
+ENV/
+
+# Local databases and temporary files
+*.db
+*.db-journal
+*.sqlite3
+geocadastre3d*.db
+
+# Environment secrets
+.env
+.env.local
+
+# Git and IDE
+.git/
+.gitignore
+.vscode/
+.idea/
