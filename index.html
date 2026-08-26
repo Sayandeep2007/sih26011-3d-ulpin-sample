@@ -2689,9 +2689,12 @@ END OF LIDAR SURVEY ANALYSIS REPORT — GEOCADASTRE-3D
     const FRONTEND_TO_BACKEND_PROP_MAP = {
       'unit-f4-a': 'U401',
       'unit-f4-b': 'U402',
-      'unit-comm': 'ground-commercial',
-      'unit-sub1': 'b1',
-      'unit-air': 'air-rights'
+      'unit-ground-retail': 'ground-commercial',
+      'G01': 'ground-commercial',
+      'unit-sub-b1': 'b1',
+      'SUB1': 'b1',
+      'unit-air-rights': 'air-rights',
+      'AIR-TDR': 'air-rights'
     };
 
     async function fetchBackendProperty(propertyId) {
@@ -2767,9 +2770,15 @@ END OF LIDAR SURVEY ANALYSIS REPORT — GEOCADASTRE-3D
         }
       } catch (err) {
         if (currentSelectedPropertyKey !== propertyKey) return;
-        syncBadge.className = 'px-1.5 py-0.5 text-[9px] font-mono font-medium bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded transition';
-        syncBadge.innerText = 'BACKEND SYNC ERROR';
-        syncBadge.title = `Backend unavailable or property not found (${err.message}). Using local cache.`;
+        if (err.message && err.message.includes('404')) {
+          syncBadge.className = 'px-1.5 py-0.5 text-[9px] font-mono font-medium bg-slate-800 text-slate-400 border border-slate-700 rounded transition';
+          syncBadge.innerText = 'LOCAL / UNREGISTERED';
+          syncBadge.title = `Procedural 3D unit (${backendPropId}). Authoritative deed not seeded in backend database. Using local cadastral geometry.`;
+        } else {
+          syncBadge.className = 'px-1.5 py-0.5 text-[9px] font-mono font-medium bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded transition';
+          syncBadge.innerText = 'BACKEND SYNC ERROR';
+          syncBadge.title = `Backend unavailable (${err.message}). Using local cache.`;
+        }
       }
     }
 
@@ -2948,9 +2957,15 @@ END OF LIDAR SURVEY ANALYSIS REPORT — GEOCADASTRE-3D
         }
       } catch (err) {
         if (currentSelectedPropertyKey !== propertyKey) return;
-        syncBadge.className = 'px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[9px] font-bold border border-rose-500/30';
-        syncBadge.innerText = 'CONFLICT BACKEND SYNC ERROR';
-        syncBadge.title = `Backend conflict API unreachable (${err.message}). Using local geometric computation.`;
+        if (err.message && err.message.includes('404')) {
+          syncBadge.className = 'px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono text-[9px] font-bold border border-slate-700';
+          syncBadge.innerText = 'NO BACKEND CONFLICT';
+          syncBadge.title = `No backend dispute record registered for procedural unit ${backendPropId}.`;
+        } else {
+          syncBadge.className = 'px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[9px] font-bold border border-rose-500/30';
+          syncBadge.innerText = 'CONFLICT BACKEND SYNC ERROR';
+          syncBadge.title = `Backend conflict API unreachable (${err.message}). Using local geometric computation.`;
+        }
       }
     }
 
@@ -3128,9 +3143,15 @@ END OF LIDAR SURVEY ANALYSIS REPORT — GEOCADASTRE-3D
           }
         }
       } catch (err) {
-        syncBadge.className = 'px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[9px] font-bold border border-rose-500/30';
-        syncBadge.innerText = 'TOPOLOGY BACKEND SYNC ERROR';
-        syncBadge.title = `Backend topology API unreachable (${err.message}). Using local evaluation.`;
+        if (err.message && err.message.includes('404')) {
+          syncBadge.className = 'px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono text-[9px] font-bold border border-sky-500/30';
+          syncBadge.innerText = 'LOCAL TOPOLOGY AUDIT';
+          syncBadge.title = `Evaluated via local geometric topology engine for procedural unit ${backendPropId}.`;
+        } else {
+          syncBadge.className = 'px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[9px] font-bold border border-rose-500/30';
+          syncBadge.innerText = 'TOPOLOGY BACKEND SYNC ERROR';
+          syncBadge.title = `Backend topology API unreachable (${err.message}). Using local evaluation.`;
+        }
       }
     }
 
