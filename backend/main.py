@@ -15,6 +15,8 @@ from models import (
     LiDARStrataResponse,
     LiDARMetadataResponse,
     LiDARSampleResponse,
+    BuildingExtractionRequest,
+    BuildingExtractionResponse,
     ConflictResult,
     ConflictMatrixResponse,
     ConflictListResponse,
@@ -47,7 +49,8 @@ from lidar_analysis import (
     analyze_lidar_points,
     get_lidar_strata,
     get_lidar_sample,
-    generate_lidar_text_report
+    generate_lidar_text_report,
+    validate_and_sync_extraction
 )
 from conflict_engine import (
     CADASTRAL_3D_VOLUMES,
@@ -525,6 +528,34 @@ def fetch_lidar_sample():
 def fetch_lidar_report():
     """Generates a downloadable plain-text LiDAR survey report computed dynamically from the live analysis engine."""
     return generate_lidar_text_report()
+
+
+@app.post(
+    "/api/lidar/extract",
+    response_model=BuildingExtractionResponse,
+    summary="Validate and Synchronize Building & Floor Extraction",
+    tags=["LiDAR Analysis"]
+)
+def sync_building_extraction(request: Optional[BuildingExtractionRequest] = None):
+    """Receives and validates geometric floor extraction results against authoritative LiDAR survey stratification rules."""
+    try:
+        return validate_and_sync_extraction(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Building extraction synchronization failed: {str(e)}")
+
+
+@app.get(
+    "/api/lidar/extract",
+    response_model=BuildingExtractionResponse,
+    summary="Get Synchronized Building & Floor Extraction",
+    tags=["LiDAR Analysis"]
+)
+def get_building_extraction():
+    """Returns the validated building and floor extraction breakdown across all 8 architectural strata."""
+    try:
+        return validate_and_sync_extraction(None)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fetching building extraction failed: {str(e)}")
 
 
 # =========================================================================

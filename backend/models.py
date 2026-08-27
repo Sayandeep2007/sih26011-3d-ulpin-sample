@@ -131,6 +131,32 @@ class LiDARSampleResponse(BaseModel):
     points: List[LiDARPoint] = Field(..., description="First 10 diagnostic points")
 
 
+class StratumExtractionInput(BaseModel):
+    name: str = Field(..., description="Name of physical stratum (e.g. Subterranean, Floor 1)")
+    elevation_min_m: float = Field(..., description="Lower stratum elevation bound in meters")
+    elevation_max_m: float = Field(..., description="Upper stratum elevation bound in meters")
+    point_count: int = Field(..., description="Number of LiDAR survey points within this elevation stratum")
+    percentage: Optional[float] = Field(None, description="Percentage of total point cloud")
+
+
+class BuildingExtractionRequest(BaseModel):
+    project: str = Field("GeoCadastre-3D", description="Project identifier")
+    total_points: int = Field(6000, description="Total LiDAR points extracted")
+    extraction_method: str = Field("Rule-Based Geometric Vertical Segmentation", description="Methodology used")
+    strata: Optional[Dict[str, Any]] = Field(None, description="Extracted strata mapped by key")
+
+
+class BuildingExtractionResponse(BaseModel):
+    project: str = Field("GeoCadastre-3D", description="Project identifier")
+    status: str = Field("SYNCHRONIZED", description="Synchronization status")
+    message: str = Field("Building & Floor Extraction validated and synchronized successfully.", description="Status message")
+    total_points: int = Field(..., description="Validated total point count")
+    strata_count: int = Field(8, description="Number of building strata extracted")
+    extraction_method: str = Field("Rule-Based Geometric Vertical Segmentation", description="Methodology used")
+    data_classification: str = Field("Prototype Cadastral Data", description="Data integrity status")
+    strata: List[LiDARStratum] = Field(..., description="Validated vertical elevation strata")
+
+
 # =========================================================================
 # 3D SPATIAL CONFLICT MODELS
 # =========================================================================

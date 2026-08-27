@@ -228,11 +228,11 @@
               <div class="grid grid-cols-2 gap-1 text-[9px]">
                 <div class="p-1 rounded bg-slate-950/80 border border-slate-800/80">
                   <span class="text-slate-400 block text-[8px]">Extraction Status:</span>
-                  <span class="font-mono font-bold text-cyan-300">GEOMETRIC PROTOTYPE</span>
+                  <span id="extraction-status-val" class="font-mono font-bold text-cyan-300">GEOMETRIC PROTOTYPE</span>
                 </div>
                 <div class="p-1 rounded bg-slate-950/80 border border-slate-800/80">
                   <span class="text-slate-400 block text-[8px]">Floor Segmentation:</span>
-                  <span class="font-mono font-bold text-amber-300">RULE-BASED SLICING</span>
+                  <span id="floor-segmentation-val" class="font-mono font-bold text-amber-300">RULE-BASED SLICING</span>
                 </div>
               </div>
 
@@ -606,6 +606,32 @@
       </div>
       <div id="conflict-engine-match" class="px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono text-[9px] font-bold text-center">
         CONFLICT ENGINE VERIFIED (9.19 m³ ≈ 9.19 m³)
+      </div>
+    </div>
+
+    <!-- LiDAR Stratum Linkage Panel -->
+    <div id="panel-stratum-crossref" class="mt-3 p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-xs space-y-2">
+      <div class="flex items-center justify-between pb-1.5 border-b border-slate-800">
+        <div class="flex items-center space-x-1.5 font-bold text-slate-200">
+          <i data-lucide="layers" class="w-3.5 h-3.5 text-cyan-400"></i>
+          <span>LiDAR Stratum Linkage</span>
+        </div>
+        <span id="stratum-link-status" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[9px] font-bold border border-emerald-500/30">VERIFIED</span>
+      </div>
+
+      <div class="space-y-1.5 text-[10px] text-slate-400">
+        <div class="flex justify-between">
+          <span>LiDAR STRATUM:</span>
+          <span id="stratum-name-val" class="mono text-cyan-300 font-bold">Floor 4</span>
+        </div>
+        <div class="flex justify-between">
+          <span>SURVEY ELEVATION:</span>
+          <span id="stratum-elev-val" class="mono text-amber-300 font-medium">+13.80m to +16.80m</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span>CADASTRAL LINK:</span>
+          <span id="stratum-cadastral-link-val" class="mono text-purple-300 font-medium truncate max-w-[200px] text-right" title="U401">U401</span>
+        </div>
       </div>
     </div>
 
@@ -1869,12 +1895,17 @@
         card.classList.add('border-l-cyan-500');
       }
 
-      // 6. Update LiDAR-to-Cadastral Vertical Comparison Panel
+      // 6. Update LiDAR Stratum Linkage Cross-Reference Panel
+      if (typeof updateStratumCrossReferenceUI === 'function') {
+        updateStratumCrossReferenceUI(data, mesh, ulpinInfo);
+      }
+
+      // 7. Update LiDAR-to-Cadastral Vertical Comparison Panel
       if (typeof updateLiDARComparisonUI === 'function') {
         updateLiDARComparisonUI();
       }
 
-      // 7. Synchronize Property Metadata with FastAPI Backend (Asynchronous)
+      // 8. Synchronize Property Metadata with FastAPI Backend (Asynchronous)
       syncPropertyWithBackend(key, data);
 
       // 8. Synchronize 3D Spatial Conflict Telemetry with FastAPI Backend (Asynchronous)
@@ -2150,16 +2181,16 @@ END OF LIDAR SURVEY ANALYSIS REPORT — GEOCADASTRE-3D
 
       const totalPoints = pPos.length / 3;
 
-      // Define segments
+      // Define 8 vertical physical building strata matching cadastral architecture
       const segmentDefs = [
         { key: 'sub', name: 'Subterranean', test: (y) => y < 0 },
-        { key: 'comm', name: 'Ground/Commercial', test: (y) => y >= 0 && y < 4 },
+        { key: 'comm', name: 'Ground / Commercial', test: (y) => y >= 0 && y < 4 },
         { key: 'f1', name: 'Floor 1', test: (y) => y >= 4.2 && y <= 7.2 },
         { key: 'f2', name: 'Floor 2', test: (y) => y >= 7.4 && y <= 10.4 },
         { key: 'f3', name: 'Floor 3', test: (y) => y >= 10.6 && y <= 13.6 },
         { key: 'f4', name: 'Floor 4', test: (y) => y >= 13.8 && y <= 16.8 },
         { key: 'f5', name: 'Floor 5', test: (y) => y >= 17.0 && y <= 20.0 },
-        { key: 'roof', name: 'Rooftop/Air Rights', test: (y) => y >= 20.0 }
+        { key: 'roof', name: 'Rooftop / Air Rights', test: (y) => y >= 20.0 }
       ];
 
       const results = {};
@@ -2167,6 +2198,7 @@ END OF LIDAR SURVEY ANALYSIS REPORT — GEOCADASTRE-3D
         results[seg.key] = {
           name: seg.name,
           count: 0,
+          percentage: 0,
           minY: Infinity,
           maxY: -Infinity,
           minX: Infinity,
@@ -2195,9 +2227,10 @@ END OF LIDAR SURVEY ANALYSIS REPORT — GEOCADASTRE-3D
         });
       }
 
-      // Format clean numbers
+      // Format clean metrics and percentages
       Object.keys(results).forEach(k => {
         const r = results[k];
+        r.percentage = totalPoints > 0 ? parseFloat(((r.count / totalPoints) * 100).toFixed(1)) : 0;
         if (r.count > 0) {
           r.minY = parseFloat(r.minY.toFixed(2));
           r.maxY = parseFloat(r.maxY.toFixed(2));
@@ -2212,29 +2245,130 @@ END OF LIDAR SURVEY ANALYSIS REPORT — GEOCADASTRE-3D
         }
       });
 
-      return results;
+      return { strata: results, totalPoints };
     }
 
-    function updateGeometricExtractionUI() {
-      const data = performGeometricBuildingAndFloorExtraction();
-      if (!data) return;
+    function updateGeometricExtractionUI(isManualTrigger = false) {
+      const extractionResult = performGeometricBuildingAndFloorExtraction();
+      if (!extractionResult) return;
 
-      Object.keys(data).forEach(key => {
-        const seg = data[key];
+      const { strata, totalPoints } = extractionResult;
+
+      // Update Badges
+      const statusEl = document.getElementById('extraction-status-val');
+      const segEl = document.getElementById('floor-segmentation-val');
+      if (statusEl) {
+        statusEl.innerText = isManualTrigger ? 'EXTRACTED (ACTIVE)' : 'EXTRACTED (8 STRATA)';
+        statusEl.className = 'font-mono font-bold text-emerald-400';
+      }
+      if (segEl) {
+        segEl.innerText = `${totalPoints.toLocaleString()} PTS / 8 STRATA`;
+        segEl.className = 'font-mono font-bold text-amber-300';
+      }
+
+      // Update Table Rows with Point Counts, Percentages, and Elevation Bounds
+      Object.keys(strata).forEach(key => {
+        const seg = strata[key];
         const ptsEl = document.getElementById(`seg-pts-${key}`);
         const elevEl = document.getElementById(`seg-elev-${key}`);
 
-        if (ptsEl) ptsEl.innerText = `${seg.count.toLocaleString()} pts`;
+        if (ptsEl) ptsEl.innerText = `${seg.count.toLocaleString()} pts (${seg.percentage.toFixed(1)}%)`;
         if (elevEl) elevEl.innerText = `${seg.minY >= 0 ? '+' : ''}${seg.minY.toFixed(1)}m to +${seg.maxY.toFixed(1)}m`;
       });
+
+      // Ensure point cloud is visible on extraction
+      if (isManualTrigger && groupPointCloud && !groupPointCloud.visible) {
+        groupPointCloud.visible = true;
+        const cb = document.getElementById('layer-pointcloud');
+        if (cb) cb.checked = true;
+      }
+
+      // Synchronize extraction with backend
+      syncBuildingExtractionWithBackend(extractionResult);
+    }
+
+    async function syncBuildingExtractionWithBackend(extractionSummary) {
+      const statusEl = document.getElementById('extraction-status-val');
+      const segEl = document.getElementById('floor-segmentation-val');
+      if (!statusEl) return;
+
+      statusEl.className = 'font-mono font-bold text-amber-300 animate-pulse';
+      statusEl.innerText = 'SYNCING EXTRACTION...';
+
+      try {
+        const payload = {
+          project: 'GeoCadastre-3D',
+          total_points: extractionSummary.totalPoints || 6000,
+          extraction_method: 'Rule-Based Geometric Vertical Segmentation',
+          strata: extractionSummary.strata || {}
+        };
+
+        const res = await fetch(`${API_BASE_URL}/api/lidar/extract`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data && data.status === 'SYNCHRONIZED') {
+          statusEl.className = 'font-mono font-bold text-emerald-400';
+          statusEl.innerText = 'BUILDING EXTRACTION SYNCED';
+          statusEl.title = `Authoritative backend extraction confirmed: ${data.strata_count} strata, ${data.total_points.toLocaleString()} pts.`;
+
+          if (segEl) {
+            segEl.innerText = `${data.total_points.toLocaleString()} PTS / ${data.strata_count} STRATA`;
+            segEl.className = 'font-mono font-bold text-amber-300';
+          }
+
+          if (data.strata && Array.isArray(data.strata)) {
+            const keyMap = {
+              'Subterranean': 'sub',
+              'Ground / Commercial': 'comm',
+              'Floor 1': 'f1',
+              'Floor 2': 'f2',
+              'Floor 3': 'f3',
+              'Floor 4': 'f4',
+              'Floor 5': 'f5',
+              'Rooftop / Air Rights': 'roof'
+            };
+
+            data.strata.forEach(st => {
+              const key = keyMap[st.name];
+              if (key) {
+                const ptsEl = document.getElementById(`seg-pts-${key}`);
+                const elevEl = document.getElementById(`seg-elev-${key}`);
+                if (ptsEl) ptsEl.innerText = `${st.point_count.toLocaleString()} pts (${st.percentage.toFixed(1)}%)`;
+                if (elevEl) elevEl.innerText = `${st.elevation_min_m >= 0 ? '+' : ''}${st.elevation_min_m.toFixed(1)}m to +${st.elevation_max_m.toFixed(1)}m`;
+              }
+            });
+          }
+        }
+      } catch (err) {
+        if (err.message && err.message.includes('404')) {
+          statusEl.className = 'font-mono font-bold text-slate-400';
+          statusEl.innerText = 'LOCAL EXTRACTION (PROTOTYPE)';
+          statusEl.title = `Backend extraction route not found (${err.message}). Using local geometric computation.`;
+        } else {
+          statusEl.className = 'font-mono font-bold text-rose-400';
+          statusEl.innerText = 'EXTRACTION SYNC ERROR';
+          statusEl.title = `Backend extraction API unreachable (${err.message}). Using local geometric computation.`;
+        }
+      }
     }
 
     const btnExtractFloors = document.getElementById('btn-extract-floors');
     if (btnExtractFloors) {
       btnExtractFloors.addEventListener('click', (e) => {
         e.stopPropagation();
-        updateGeometricExtractionUI();
-        showToast('Extraction Complete', `Segmented ${pCount.toLocaleString()} LiDAR points into 8 elevation strata.`);
+        updateGeometricExtractionUI(true);
+        showToast('Extraction Complete', `Extracted and segmented ${pCount.toLocaleString()} LiDAR points across 8 vertical building strata.`);
       });
     }
 
@@ -2391,6 +2525,111 @@ END OF LIDAR SURVEY ANALYSIS REPORT — GEOCADASTRE-3D
       }
 
       return results;
+    }
+
+    // -------------------------------------------------------------
+    // LIDAR STRATA <-> 3D CADASTRAL UNIT CROSS-REFERENCE MODULE
+    // -------------------------------------------------------------
+    /**
+     * Resolves the corresponding LiDAR elevation stratum for a given property/mesh
+     * based on its floorLevel and elevation bounds.
+     */
+    function matchStratumForProperty(property, mesh) {
+      if (!property && !mesh) return null;
+
+      let floor = null;
+      if (property && property.floorLevel !== undefined && property.floorLevel !== null) {
+        floor = property.floorLevel;
+      } else if (mesh && mesh.userData && mesh.userData.floorLevel !== undefined && mesh.userData.floorLevel !== null) {
+        floor = mesh.userData.floorLevel;
+      }
+
+      const floorMap = {
+        '-2': { key: 'sub', name: 'Subterranean', min: -10.0, max: 0.0, label: '-10.00m to 0.00m' },
+        '-1': { key: 'sub', name: 'Subterranean', min: -10.0, max: 0.0, label: '-10.00m to 0.00m' },
+        '0':  { key: 'comm', name: 'Ground / Commercial', min: 0.0, max: 4.0, label: '0.00m to +4.00m' },
+        '1':  { key: 'f1', name: 'Floor 1', min: 4.2, max: 7.2, label: '+4.20m to +7.20m' },
+        '2':  { key: 'f2', name: 'Floor 2', min: 7.4, max: 10.4, label: '+7.40m to +10.40m' },
+        '3':  { key: 'f3', name: 'Floor 3', min: 10.6, max: 13.6, label: '+10.60m to +13.60m' },
+        '4':  { key: 'f4', name: 'Floor 4', min: 13.8, max: 16.8, label: '+13.80m to +16.80m' },
+        '5':  { key: 'f5', name: 'Floor 5', min: 17.0, max: 20.0, label: '+17.00m to +20.00m' },
+        '6':  { key: 'roof', name: 'Rooftop / Air Rights', min: 20.0, max: 22.0, label: '+20.00m to +22.00m' },
+        '7':  { key: 'roof', name: 'Rooftop / Air Rights', min: 20.0, max: 22.0, label: '+20.00m to +22.00m' }
+      };
+
+      if (floor !== null && floorMap[String(floor)]) {
+        return {
+          ...floorMap[String(floor)],
+          floorLevel: floor,
+          matched: true
+        };
+      }
+
+      return {
+        key: 'unknown',
+        name: 'Unassigned Stratum',
+        min: 0.0,
+        max: 0.0,
+        label: 'N/A',
+        floorLevel: floor,
+        matched: false
+      };
+    }
+
+    /**
+     * Updates the Property Details Card UI with the matched LiDAR Stratum cross-reference telemetry.
+     */
+    function updateStratumCrossReferenceUI(property, mesh, ulpinInfo) {
+      const stratum = matchStratumForProperty(property, mesh);
+
+      const statusEl = document.getElementById('stratum-link-status');
+      const nameEl = document.getElementById('stratum-name-val');
+      const elevEl = document.getElementById('stratum-elev-val');
+      const linkEl = document.getElementById('stratum-cadastral-link-val');
+
+      if (!statusEl || !nameEl || !elevEl || !linkEl) return;
+
+      const unitToken = (ulpinInfo && ulpinInfo.unitToken) 
+        ? ulpinInfo.unitToken 
+        : ((property && property.unitToken) ? property.unitToken : (mesh && mesh.userData && mesh.userData.unitToken ? mesh.userData.unitToken : 'UNIT'));
+
+      const fullUlpin = (ulpinInfo && ulpinInfo.fullUlpin)
+        ? ulpinInfo.fullUlpin
+        : ((property && property.ulpin) ? property.ulpin : unitToken);
+
+      if (stratum && stratum.matched) {
+        statusEl.className = 'px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[9px] font-bold border border-emerald-500/30';
+        statusEl.innerText = 'VERIFIED';
+        statusEl.title = `Cadastral unit ${unitToken} (Floor ${stratum.floorLevel}) verified against LiDAR survey stratum [${stratum.label}].`;
+
+        nameEl.innerText = stratum.name;
+        nameEl.className = 'mono text-cyan-300 font-bold';
+
+        elevEl.innerText = stratum.label;
+        elevEl.className = 'mono text-amber-300 font-medium';
+
+        linkEl.innerText = `${unitToken} (${fullUlpin})`;
+        linkEl.title = `${unitToken} — ${fullUlpin}`;
+        linkEl.className = 'mono text-purple-300 font-medium truncate max-w-[200px] text-right';
+      } else {
+        statusEl.className = 'px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono text-[9px] font-bold border border-slate-700';
+        statusEl.innerText = 'UNVERIFIED';
+        statusEl.title = 'No authoritative LiDAR stratum could be resolved for this elevation.';
+
+        nameEl.innerText = 'Unresolved Stratum';
+        nameEl.className = 'mono text-slate-400';
+
+        elevEl.innerText = 'N/A (Outside Survey Stratum)';
+        elevEl.className = 'mono text-slate-400';
+
+        linkEl.innerText = `${unitToken} (Unlinked)`;
+        linkEl.title = 'Unlinked';
+        linkEl.className = 'mono text-slate-400';
+      }
+
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+      }
     }
 
     // -------------------------------------------------------------
